@@ -49,20 +49,50 @@ class DataProfiler:
 
         stats: dict[str, Any] = {
             "dtype": str(col.dtype),
-            "null_count": col.null_count().item(),
+            "null_count": col.null_count() if isinstance(col.null_count(), int) else col.null_count().item(),
             "unique_count": col.n_unique(),
         }
 
         if col.dtype in (pl.Int64, pl.Int32, pl.Float64, pl.Float32):
+            mean_val = col.mean() if isinstance(col.mean(), (int, float)) else col.mean().item()
+            std_val = col.std() if isinstance(col.std(), (int, float)) else col.std().item()
+            min_val = col.min() if isinstance(col.min(), (int, float)) else col.min().item()
+            max_val = col.max() if isinstance(col.max(), (int, float)) else col.max().item()
+            median_val = col.median() if isinstance(col.median(), (int, float)) else col.median().item()
+            q25_val = col.quantile(0.25) if isinstance(col.quantile(0.25), (int, float)) else col.quantile(0.25).item()
+            q75_val = col.quantile(0.75) if isinstance(col.quantile(0.75), (int, float)) else col.quantile(0.75).item()
+
             stats.update({
-                "mean": col.mean(),
-                "std": col.std(),
-                "min": col.min(),
-                "max": col.max(),
-                "median": col.median(),
-                "q25": col.quantile(0.25),
-                "q75": col.quantile(0.75),
+                "mean": mean_val,
+                "std": std_val,
+                "min": min_val,
+                "max": max_val,
+                "median": median_val,
+                "q25": q25_val,
+                "q75": q75_val,
             })
+
+            # Flag high variance
+            if mean_val != 0:
+                stats["high_variance"] = std_val / abs(mean_val) > 0.5
+            else:
+                stats["high_variance"] = std_val > 0
+
+            # Calculate outlier percentage (IQR method)
+            iqr = q75_val - q25_val
+            if iqr > 0:
+                lower = q25_val - 1.5 * iqr
+                upper = q75_val + 1.5 * iqr
+                outliers = col.filter((col < lower) | (col > upper))
+                stats["outliers_pct"] = (outliers.count() / collected.height) * 100
+            else:
+                stats["outliers_pct"] = 0.0
+
+            # Skewness approximation
+            if std_val > 0 and mean_val is not None:
+                stats["skewness"] = ((mean_val - median_val) / std_val) * 3 if std_val != 0 else 0
+            else:
+                stats["skewness"] = 0
 
         return stats
 
@@ -85,7 +115,9 @@ class DataProfiler:
         for i, col1 in enumerate(numeric_cols):
             for col2 in numeric_cols[i + 1:]:
                 key = f"{col1}__{col2}"
-                correlations[key] = corr_matrix[col1][col2].item()
+                # Extract scalar from correlation DataFrame
+                val = corr_matrix.select(col1).to_series()[numeric_cols.index(col2)]
+                correlations[key] = val
 
         return correlations
 
@@ -114,7 +146,7 @@ class DataProfiler:
         schema = self.df.collect_schema()
 
         for col_name, dtype in schema.items():
-            null_pct = collected[col_name].null_count().item() / collected.height * 100
+            null_pct = (collected[col_name].null_count() if isinstance(collected[col_name].null_count(), int) else collected[col_name].null_count().item()) / collected.height * 100
 
             if null_pct > 10:
                 suggestions.append({
@@ -126,7 +158,9 @@ class DataProfiler:
 
             if dtype in (pl.Int64, pl.Float64):
                 col = collected[col_name]
-                if col.std() > col.mean() * 0.5:
+                std_val = col.std() if isinstance(col.std(), (int, float)) else col.std().item()
+                mean_val = col.mean() if isinstance(col.mean(), (int, float)) else col.mean().item()
+                if std_val > mean_val * 0.5:
                     suggestions.append({
                         "type": "high_variance",
                         "column": col_name,

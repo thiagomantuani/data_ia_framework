@@ -302,28 +302,57 @@ class LLMClient:
         problem_statement: str,
         profiling_summary: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        """Gera hipóteses usando LLM com prompt estruturado."""
-        system = """Você é um Analista de Dados Sênior especializado em gerar hipóteses de negócio acionáveis.
-Cada hipótese deve ter:
+        """Gera hipóteses de negócio usando LLM com contexto rico."""
+
+        col_stats = profiling_summary.get("column_stats", {})
+        quality = profiling_summary.get("quality_metrics", {})
+        suggestions = profiling_summary.get("suggestions", [])
+
+        # Build rich data context
+        col_list = list(col_stats.keys())
+        numeric_cols = [c for c in col_list if col_stats.get(c, {}).get("type") == "numeric"]
+        categorical_cols = [c for c in col_list if col_stats.get(c, {}).get("type") == "string"]
+
+        completeness = quality.get("completeness_score", 0)
+        nulls_info = quality.get("null_percent", {})
+
+        system = """Você é um Analista de Dados Sênior especializado em gerar hipóteses de NEGÓCIO acionáveis.
+
+Sua função é analisar DESCRIÇÕES DE PROBLEMAS DE NEGÓCIO e dados para formular hipóteses que um tomador de decisão (CEO, Gerente, Diretor) usaria para tomar decisões.
+
+Cada hipótese deve seguir o formato:
 - ID único (H1, H2, etc.)
-- Título claro
-- Descrição breve
-- Lógica de negócio
-- Impacto esperado (Alto/Médio/Baixo)
-- Score de confiança inicial (0.0 a 1.0)
+- Título: pergunta de negócio clara
+- Descrição: contexto e razão da hipótese
+- Lógica de negócio: por que isso importa para o negócio
+- Impacto esperado: Alto / Médio / Baixo
+- Confiança inicial: 0.0 a 1.0
+
+REGRAS:
+- Hipóteses devem ser sobre resultados de negócio, não sobre qualidade técnica de dados
+- Foque em: receita, custo, comportamento de cliente, tendências de mercado, eficiência operacional
+- Cada hipótese deve poder ser respondida com os dados disponíveis
+- Inclua hipóteses sobre segmentos, comparações e tendências quando relevante
 
 Responda APENAS com JSON array, sem texto adicional."""
 
-        prompt = f"""Problema de negócio: {problem_statement}
+        prompt = f"""Contexto de Negócio:
+{problem_statement}
 
-Resumo do profiling de dados:
-- Total de linhas: {profiling_summary.get('quality_metrics', {}).get('total_rows', 'N/A')}
-- Total de colunas: {profiling_summary.get('quality_metrics', {}).get('total_columns', 'N/A')}
-- Completude: {profiling_summary.get('quality_metrics', {}).get('completeness_score', 'N/A')}%
-- Colunas com nulos: {profiling_summary.get('quality_metrics', {}).get('null_percent', {})}
-- Sugestões: {profiling_summary.get('suggestions', [])}
+Perfil dos Dados:
+- Total de colunas: {len(col_list)}
+- Colunas numéricas: {numeric_cols}
+- Colunas categóricas: {categorical_cols}
+- Completude geral: {completeness:.0f}%
+- Colunas com dados missing: {list(nulls_info.keys())}
 
-Gere 5 hipóteses de negócio no formato:
+Estatísticas das colunas numéricas:
+{self._format_col_stats(col_stats)}
+
+Sugestões de análise:
+{suggestions[:5]}
+
+Gere entre 6-10 hipóteses de negócio no seguinte formato:
 [
   {{
     "id": "H1",
@@ -331,13 +360,17 @@ Gere 5 hipóteses de negócio no formato:
     "description": "...",
     "business_logic": "...",
     "expected_impact": "Alto",
-    "confidence": 0.5
+    "confidence": 0.65
   }}
-]"""
+]
+
+Priorize hipóteses que:
+1. Se relacionam diretamente com o problema de negócio stated
+2. Podem ser validadas com os dados disponíveis
+3. Têm potencial de impacto estratégico"""
 
         try:
             response = self.generate(prompt, system=system)
-            # Try to parse as JSON
             response = response.strip()
             if response.startswith("```json"):
                 response = response[7:]
@@ -345,9 +378,31 @@ Gere 5 hipóteses de negócio no formato:
                 response = response[3:]
             if response.endswith("```"):
                 response = response[:-3]
-            return json.loads(response)
+            hyps = json.loads(response)
+            if isinstance(hyps, list) and len(hyps) > 0:
+                return hyps
+            return self._fallback_hypotheses()
         except (json.JSONDecodeError, Exception):
             return self._fallback_hypotheses()
+
+    def _format_col_stats(self, col_stats: dict[str, Any]) -> str:
+        """Formata estatísticas de colunas para o prompt."""
+        lines = []
+        for col, stats in list(col_stats.items())[:15]:
+            mean = stats.get("mean")
+            std = stats.get("std")
+            min_v = stats.get("min")
+            max_v = stats.get("max")
+            unique = stats.get("unique")
+            null_pct = stats.get("null_pct", 0)
+            mean_str = f"{mean:.2f}" if mean is not None else "-"
+            std_str = f"{std:.2f}" if std is not None else "-"
+            lines.append(
+                f"  - {col}: média={mean_str}, std={std_str}, "
+                f"min={min_v if min_v is not None else '-'}, max={max_v if max_v is not None else '-'}, "
+                f"únicos={unique}, nulos={null_pct:.1f}%"
+            )
+        return "\n".join(lines) if lines else "  (sem estatísticas disponíveis)"
 
     def _fallback_hypotheses(self) -> list[dict[str, Any]]:
         return [
@@ -375,30 +430,48 @@ Gere 5 hipóteses de negócio no formato:
         validation_results: dict[str, Any],
     ) -> dict[str, Any]:
         """Gera insights executivos a partir de hipótese validada."""
-        system = """Você é um Analista de Dados Sênior que transforma validações de hipóteses em insights executivos.
+
+        status = validation_results.get("status", "PENDENTE")
+        confidence = validation_results.get("confidence", 0)
+        metrics = validation_results.get("metrics", {})
+        evidence = validation_results.get("evidence", "")
+
+        system = """Você é um Analista de Dados Sênior que transforma validações de hipóteses em insights EXECUTIVOS.
+
+Um insight executivo deve:
+- Ser compreensível por um CEO, Gerente ou Diretor não-técnico
+- Conectar a validação da hipótese com IMPACTO NO NEGÓCIO
+- Incluir RECOMENDAÇÕES CONCRETAS e acionáveis
+- Ter métricas específicas quando possível
+
 Forneça:
-- Título do insight
-- Descrição clara
-- Métricas chave
-- Recomendações acionáveis (3-5)
-- Impacto no negócio (Alto/Médio/Baixo)
-- Confiança (0.0 a 1.0)
+- title: título do insight (máx 10 palavras)
+- description: explicação clara do que foi descoberto e por que importa
+- metrics: objeto com métricas de suporte (valores numéricos)
+- recommendations: 3-5 ações específicas que o negócio deve tomar
+- business_impact: Alto / Médio / Baixo
+- confidence: confiança na análise (0.0 a 1.0)
 
-Responda APENAS com JSON válido."""
+Responda APENAS com JSON válido, sem texto adicional."""
 
-        prompt = f"""Hipótese: {hypothesis.get('title', 'N/A')}
+        prompt = f"""Insight validado:
+
+Hipótese: {hypothesis.get('title', 'N/A')}
 Descrição: {hypothesis.get('description', 'N/A')}
-Status: {validation_results.get('status', 'N/A')}
-Confiança: {validation_results.get('confidence', 0):.0%}
-Evidência: {validation_results.get('evidence', 'N/A')}
-Métricas: {validation_results.get('metrics', {})}
+Lógica de negócio: {hypothesis.get('business_logic', 'N/A')}
 
-Gere insight executivo no formato:
+Resultado da validação:
+- Status: {status}
+- Confiança: {confidence:.0%}
+- Evidência: {evidence}
+- Métricas: {metrics}
+
+Gere o insight executivo no formato:
 {{
   "title": "...",
   "description": "...",
-  "metrics": {{...}},
-  "recommendations": ["...", "..."],
+  "metrics": {{"key_metric": value, ...}},
+  "recommendations": ["ação 1", "ação 2", "ação 3"],
   "business_impact": "Alto",
   "confidence": 0.85
 }}"""
@@ -412,13 +485,21 @@ Gere insight executivo no formato:
                 response = response[3:]
             if response.endswith("```"):
                 response = response[:-3]
-            return json.loads(response)
+            result = json.loads(response)
+            # Validate structure
+            if isinstance(result, dict) and "title" in result:
+                return result
+            raise ValueError("Invalid structure")
         except (json.JSONDecodeError, Exception):
             return {
                 "title": f"Insight: {hypothesis.get('title', 'N/A')}",
-                "description": "Insight gerado automaticamente",
-                "metrics": validation_results.get("metrics", {}),
-                "recommendations": ["Recomendação 1", "Recomendação 2"],
+                "description": evidence or "Insights gerados a partir da validação de hipóteses",
+                "metrics": metrics,
+                "recommendations": [
+                    f"Investigar mais a fundo: {hypothesis.get('title', 'N/A')}",
+                    "Revisar processos relacionados",
+                    "Monitorar métricas relacionadas",
+                ],
                 "business_impact": hypothesis.get("expected_impact", "Médio"),
-                "confidence": validation_results.get("confidence", 0.5),
+                "confidence": confidence,
             }

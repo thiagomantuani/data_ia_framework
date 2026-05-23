@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Data Framework</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 AI Data Framework</h1>
+            <p class="subtitle">Framework analítico orientado a hipóteses</p>
+        </header>
+
+        <div class="upload-zone" id="dropZone">
+            <input type="file" id="fileInput" accept=".csv,.parquet,.xlsx,.xls">
+            <div class="upload-icon">📁</div>
+            <p class="upload-text"><strong>Clique ou arraste</strong> um arquivo CSV, Parquet ou Excel</p>
+        </div>
+
+        <div class="controls">
+            <input type="text" id="problemInput" placeholder="Ex: Queda no faturamento, Análise de churn...">
+            <select id="llmSelect">
+                <option value="minimax">MiniMax (padrão)</option>
+                <option value="anthropic">Anthropic Claude</option>
+                <option value="openai">OpenAI GPT</option>
+                <option value="litellm">LiteLLM Proxy</option>
+            </select>
+            <button id="runBtn" onclick="runPipeline()">▶ Executar</button>
+        </div>
+
+        <div class="progress" id="progress">
+            <div class="progress-step" data-step="load"><div class="icon">1</div><div class="label">Carregando dados</div></div>
+            <div class="progress-step" data-step="profile"><div class="icon">2</div><div class="label">Analisando estrutura</div></div>
+            <div class="progress-step" data-step="hypotheses"><div class="icon">3</div><div class="label">Gerando hipóteses</div></div>
+            <div class="progress-step" data-step="validate"><div class="icon">4</div><div class="label">Validando hipóteses</div></div>
+            <div class="progress-step" data-step="insights"><div class="icon">5</div><div class="label">Gerando insights</div></div>
+        </div>
+
+        <div class="results" id="results">
+            <div class="stats-grid" id="statsGrid"></div>
+
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('overview')">Visão Geral</button>
+                <button class="tab" onclick="showTab('hypotheses')">Hipóteses</button>
+                <button class="tab" onclick="showTab('insights')">Insights</button>
+                <button class="tab" onclick="showTab('quality')">Qualidade</button>
+            </div>
+
+            <div class="tab-content active" id="tab-overview"></div>
+            <div class="tab-content" id="tab-hypotheses"></div>
+            <div class="tab-content" id="tab-insights"></div>
+            <div class="tab-content" id="tab-quality"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

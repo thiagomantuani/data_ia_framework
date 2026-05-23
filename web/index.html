@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Data Framework</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0f1117; --surface: #1a1d27; --surface2: #21242f;
+            --border: #2a2d3a; --text: #e4e4e7; --text-dim: #71717a;
+            --accent: #06b6d4; --accent-dim: #0891b2;
+            --success: #22c55e; --warning: #eab308; --danger: #ef4444;
+            --purple: #a855f7; --pink: #ec4899;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        /* ===== TOPO FIXO ===== */
+        .top-bar {
+            position: sticky; top: 0; z-index: 100;
+            background: var(--surface); border-bottom: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+        }
+        .top-bar-inner { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; }
+        .top-bar-title { font-size: 1.25rem; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 0.5rem; }
+        .upload-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+        .upload-zone {
+            flex: 1; min-width: 200px; border: 2px dashed var(--border);
+            border-radius: 10px; padding: 0.75rem 1rem; cursor: pointer;
+            display: flex; align-items: center; gap: 0.75rem; transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+        .upload-zone:hover, .upload-zone.dragover { border-color: var(--accent); background: rgba(6,182,212,0.05); }
+        .upload-zone input { display: none; }
+        .file-info { color: var(--text-dim); }
+        .file-info strong { color: var(--accent); }
+        .config-row { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 0.75rem; align-items: center; }
+        input, select, textarea {
+            background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+            padding: 0.6rem 0.9rem; color: var(--text); font-size: 0.9rem; width: 100%;
+            font-family: inherit;
+        }
+        input::placeholder { color: var(--text-dim); opacity: 0.7; }
+        textarea { resize: none; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+        button {
+            background: var(--accent); color: var(--bg); border: none;
+            border-radius: 8px; padding: 0.6rem 1.5rem;
+            font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: background 0.2s;
+            white-space: nowrap;
+        }
+        button:hover { background: var(--accent-dim); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        button.btn-outline {
+            background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+        }
+        button.btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+        /* ===== LAYOUT ===== */
+        .layout { display: flex; min-height: calc(100vh - 120px); }
+        /* ===== SIDEBAR ===== */
+        .sidebar {
+            width: 240px; min-width: 240px; background: var(--surface);
+            border-right: 1px solid var(--border); padding: 1rem 0;
+            overflow-y: auto;
+        }
+        .sidebar-section { padding: 0.5rem 0; }
+        .sidebar-title {
+            font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em;
+            color: var(--text-dim); padding: 0.5rem 1.25rem; font-weight: 600;
+        }
+        .sidebar-item {
+            display: flex; align-items: center; gap: 0.75rem;
+            padding: 0.65rem 1.25rem; cursor: pointer; transition: all 0.15s;
+            font-size: 0.875rem; color: var(--text-dim); border-left: 3px solid transparent;
+        }
+        .sidebar-item:hover { background: var(--surface2); color: var(--text); }
+        .sidebar-item.active { background: rgba(6,182,212,0.1); color: var(--accent); border-left-color: var(--accent); }
+        .sidebar-item .icon { font-size: 1.1rem; width: 24px; text-align: center; }
+        .sidebar-item .count {
+            margin-left: auto; background: var(--border); color: var(--text-dim);
+            font-size: 0.7rem; padding: 0.1rem 0.5rem; border-radius: 999px;
+        }
+        .sidebar-item.active .count { background: var(--accent); color: var(--bg); }
+        /* ===== MAIN ===== */
+        .main { flex: 1; overflow-y: auto; }
+        .main-inner { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+        /* ===== TABS ===== */
+        .section-tabs {
+            display: flex; gap: 0.25rem; margin-bottom: 1.5rem;
+            background: var(--surface); border-radius: 10px; padding: 0.25rem;
+        }
+        .section-tab {
+            flex: 1; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer;
+            text-align: center; font-size: 0.85rem; font-weight: 500;
+            color: var(--text-dim); background: none; border: none; transition: all 0.2s;
+        }
+        .section-tab:hover { color: var(--text); }
+        .section-tab.active { background: var(--accent); color: var(--bg); font-weight: 600; }
+        /* ===== PROGRESS ===== */
+        .progress-bar-container {
+            display: none; margin-bottom: 1.5rem;
+            background: var(--surface); border-radius: 12px; padding: 1.25rem;
+        }
+        .progress-steps { display: flex; gap: 0.5rem; }
+        .progress-step-item {
+            flex: 1; text-align: center; padding: 0.5rem; border-radius: 8px;
+            font-size: 0.78rem; color: var(--text-dim); background: var(--bg);
+        }
+        .progress-step-item.done { background: rgba(34,197,94,0.15); color: var(--success); }
+        .progress-step-item.active { background: rgba(6,182,212,0.15); color: var(--accent); animation: glow 1.5s infinite; }
+        @keyframes glow { 0%,100%{box-shadow:0 0 0 0 rgba(6,182,212,0.3)} 50%{box-shadow:0 0 8px 2px rgba(6,182,212,0.3)} }
+        /* ===== CARDS ===== */
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem;
+        }
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+        .card-title { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+        .card-title .emoji { font-size: 1.2rem; }
+        .badge {
+            font-size: 0.7rem; padding: 0.2rem 0.65rem; border-radius: 999px; font-weight: 600;
+        }
+        .badge-success { background: rgba(34,197,94,0.15); color: var(--success); }
+        .badge-danger { background: rgba(239,68,68,0.15); color: var(--danger); }
+        .badge-warning { background: rgba(234,179,8,0.15); color: var(--warning); }
+        .badge-info { background: rgba(6,182,212,0.15); color: var(--accent); }
+        .badge-purple { background: rgba(168,85,247,0.15); color: var(--purple); }
+        .badge-pink { background: rgba(236,72,153,0.15); color: var(--pink); }
+        /* ===== STATS ===== */
+        .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1rem; }
+        .stat-box {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 10px; padding: 1rem; text-align: center;
+        }
+        .stat-box .value { font-size: 1.75rem; font-weight: 700; color: var(--accent); }
+        .stat-box .label { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.2rem; }
+        /* ===== HYPOTHESIS ===== */
+        .hypothesis-card {
+            background: var(--surface2); border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem;
+            border-left: 4px solid var(--border);
+        }
+        .hypothesis-card.confirmada { border-left-color: var(--success); }
+        .hypothesis-card.refutada { border-left-color: var(--danger); }
+        .hypothesis-card.parcial { border-left-color: var(--warning); }
+        .hypothesis-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 0.5rem; }
+        .hypothesis-desc { color: var(--text-dim); font-size: 0.85rem; line-height: 1.5; margin-bottom: 0.75rem; }
+        .hypothesis-meta { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+        .hypothesis-meta span { font-size: 0.78rem; color: var(--text-dim); }
+        .confidence-bar { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 0.5rem; }
+        .confidence-fill { height: 100%; border-radius: 3px; }
+        /* ===== INSIGHT ===== */
+        .insight-card {
+            background: var(--surface2); border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem;
+        }
+        .insight-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+        .insight-title { font-weight: 600; font-size: 0.95rem; }
+        .insight-desc { color: var(--text-dim); font-size: 0.85rem; line-height: 1.5; margin-bottom: 0.75rem; }
+        .insight-recs { font-size: 0.8rem; }
+        .insight-recs ul { margin-left: 1.25rem; color: var(--text-dim); }
+        .insight-recs li { margin-bottom: 0.25rem; }
+        /* ===== CHARTS ===== */
+        .chart-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+        .chart-box {
+            background: var(--surface2); border-radius: 10px; padding: 1rem;
+            border: 1px solid var(--border);
+        }
+        .chart-title { font-size: 0.8rem; font-weight: 600; color: var(--text-dim); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        /* ===== STRUCTURE ===== */
+        .col-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .col-table th { text-align: left; padding: 0.5rem 0.75rem; color: var(--text-dim); font-weight: 600; border-bottom: 1px solid var(--border); font-size: 0.75rem; text-transform: uppercase; }
+        .col-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+        .col-table tr:hover td { background: var(--surface2); }
+        .type-badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; }
+        .type-num { background: rgba(6,182,212,0.15); color: var(--accent); }
+        .type-str { background: rgba(168,85,247,0.15); color: var(--purple); }
+        .type-bool { background: rgba(236,72,153,0.15); color: var(--pink); }
+        .type-date { background: rgba(234,179,8,0.15); color: var(--warning); }
+        /* ===== EMPTY STATE ===== */
+        .empty-state { text-align: center; padding: 3rem; color: var(--text-dim); }
+        .empty-state .big-emoji { font-size: 3rem; margin-bottom: 1rem; }
+        .empty-state p { font-size: 0.9rem; max-width: 300px; margin: 0 auto; }
+        /* ===== LOADING ===== */
+        .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid transparent; border-top-color: currentColor; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        /* ===== SECTION VISIBILITY ===== */
+        .section { display: none; }
+        .section.active { display: block; }
+        .subsection { display: none; }
+        .subsection.active { display: block; }
+        /* ===== LOG ===== */
+        .log-container { font-family: 'Consolas', 'Monaco', monospace; font-size: 0.8rem; }
+        .log-entry {
+            display: flex; align-items: flex-start; gap: 0.75rem;
+            padding: 0.5rem 0.75rem; border-radius: 6px; margin-bottom: 0.35rem;
+            background: var(--surface2); border-left: 3px solid var(--border);
+        }
+        .log-entry.info { border-left-color: var(--accent); }
+        .log-entry.success { border-left-color: var(--success); }
+        .log-entry.error { border-left-color: var(--danger); background: rgba(239,68,68,0.05); }
+        .log-step { font-weight: 700; font-size: 0.7rem; text-transform: uppercase; min-width: 80px; color: var(--text-dim); }
+        .log-entry.info .log-step { color: var(--accent); }
+        .log-entry.success .log-step { color: var(--success); }
+        .log-entry.error .log-step { color: var(--danger); }
+        .log-msg { color: var(--text); flex: 1; line-height: 1.4; }
+        .log-time { color: var(--text-dim); font-size: 0.7rem; white-space: nowrap; }
+        .log-refresh { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+        .log-refresh button { font-size: 0.78rem; padding: 0.4rem 1rem; }
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 900px) {
+            .config-row { grid-template-columns: 1fr 1fr; }
+            .config-row input:first-child { grid-column: 1 / -1; }
+        }
+        @media (max-width: 600px) {
+            /* Topo */
+            .top-bar { padding: 0.75rem; }
+            .top-bar-title { font-size: 1rem; }
+            .config-row { grid-template-columns: 1fr; gap: 0.5rem; }
+            .config-row input:first-child { grid-column: auto; }
+            #runBtn { width: 100%; padding: 0.75rem; font-size: 1rem; }
+
+            /* Sidebar → bottom nav */
+            .layout { flex-direction: column-reverse; }
+            .sidebar {
+                position: fixed; bottom: 0; left: 0; right: 0;
+                width: 100%; min-width: unset; max-height: 60vh;
+                border-right: none; border-top: 1px solid var(--border);
+                display: flex; flex-direction: row; overflow-x: auto;
+                padding: 0; z-index: 99;
+            }
+            .sidebar-section { display: flex; flex-direction: row; align-items: center; padding: 0; flex-shrink: 0; }
+            .sidebar-title { display: none; }
+            .sidebar-item { flex-direction: column; padding: 0.5rem 0.75rem; font-size: 0.7rem; border-left: none; border-top: 3px solid transparent; gap: 0.25rem; }
+            .sidebar-item.active { border-top-color: var(--accent); background: rgba(6,182,212,0.1); }
+            .sidebar-item .icon { font-size: 1rem; }
+            .sidebar-item .count { margin-left: 0; font-size: 0.65rem; }
+            .main { min-height: auto; padding-bottom: 70px; }
+            .main-inner { padding: 1rem; }
+
+            /* Cards */
+            .stats-row { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
+            .chart-grid { grid-template-columns: 1fr; }
+            .quality-metrics { grid-template-columns: 1fr; gap: 0.5rem; }
+            h1 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ===== TOPO: CARREGAR DADOS (sempre visível) ===== -->
+<div class="top-bar">
+    <div class="top-bar-inner">
+        <div class="top-bar-title">🤖 AI Data Framework — Análise Orientada a Hipóteses</div>
+
+        <div class="upload-row">
+            <div class="upload-zone" id="dropZone">
+                <input type="file" id="fileInput" accept=".csv,.parquet,.xlsx,.xls">
+                <span>📂</span>
+                <span class="file-info" id="fileInfo">Clique ou arraste um arquivo CSV, Parquet ou Excel</span>
+            </div>
+        </div>
+
+        <div class="config-row">
+            <input type="text" id="objectiveInput" placeholder="🎯 Qual é o problema de negócio?">
+            <input type="text" id="personaInput" placeholder="👤 Quem vai usar (ex: time de marketing)">
+            <select id="llmSelect">
+                <option value="minimax">MiniMax</option>
+                <option value="anthropic">Claude</option>
+                <option value="openai">GPT-4</option>
+                <option value="litellm">LiteLLM</option>
+            </select>
+            <button id="runBtn" onclick="runPipeline()">▶ Executar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== PROGRESS BAR ===== -->
+<div class="progress-bar-container" id="progressBar">
+    <div class="progress-steps" id="progressSteps">
+        <div class="progress-step-item" data-step="load">1. Carregar</div>
+        <div class="progress-step-item" data-step="structure">2. Estrutura</div>
+        <div class="progress-step-item" data-step="hypotheses">3. Hipóteses</div>
+        <div class="progress-step-item" data-step="validate">4. Validação</div>
+        <div class="progress-step-item" data-step="insights">5. Insights</div>
+    </div>
+</div>
+
+<!-- ===== LAYOUT ===== -->
+<div class="layout">
+
+    <!-- ===== SIDEBAR ===== -->
+    <div class="sidebar">
+        <div class="sidebar-section">
+            <div class="sidebar-title">📂 Dados</div>
+            <div class="sidebar-item active" onclick="showSection('load', this)">
+                <span class="icon">📊</span> Carregar Dados
+                <span class="count" id="count-load">—</span>
+            </div>
+        </div>
+        <div class="sidebar-section">
+            <div class="sidebar-title">🔍 Análise</div>
+            <div class="sidebar-item" onclick="showSection('structure', this)">
+                <span class="icon">📐</span> Estrutura
+                <span class="count" id="count-structure">—</span>
+            </div>
+            <div class="sidebar-item" onclick="showSection('hypotheses', this)">
+                <span class="icon">💡</span> Hipóteses
+                <span class="count" id="count-hypotheses">0</span>
+            </div>
+            <div class="sidebar-item" onclick="showSection('validated', this)">
+                <span class="icon">✅</span> Validadas
+                <span class="count" id="count-validated">0</span>
+            </div>
+        </div>
+        <div class="sidebar-section">
+            <div class="sidebar-title">📈 Insights</div>
+            <div class="sidebar-item" onclick="showSection('insights', this)">
+                <span class="icon">🔮</span> Insights
+                <span class="count" id="count-insights">0</span>
+            </div>
+        </div>
+        <div class="sidebar-section">
+            <div class="sidebar-title">🛠️ Sistema</div>
+            <div class="sidebar-item" onclick="showSection('log', this)">
+                <span class="icon">📋</span> Log
+                <span class="count" id="count-log">0</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MAIN ===== -->
+    <div class="main">
+        <div class="main-inner">
+
+            <!-- ===== SEÇÃO: CARREGAR DADOS ===== -->
+            <div class="section active" id="section-load">
+                <div class="section-tabs">
+                    <button class="section-tab active" onclick="showSubsection('load-overview', this)">Visão Geral</button>
+                    <button class="section-tab" onclick="showSubsection('load-sample', this)">Amostra</button>
+                    <button class="section-tab" onclick="showSubsection('load-quality', this)">Qualidade</button>
+                </div>
+
+                <div class="subsection active" id="sub-load-overview">
+                    <div id="load-overview-content">
+                        <div class="empty-state">
+                            <div class="big-emoji">📁</div>
+                            <p>Arraste ou selecione um arquivo CSV, Parquet ou Excel para começar a análise</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="subsection" id="sub-load-sample">
+                    <div id="load-sample-content">
+                        <div class="empty-state">
+                            <div class="big-emoji">🔎</div>
+                            <p>Execute a análise para ver a amostra dos dados</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="subsection" id="sub-load-quality">
+                    <div id="load-quality-content">
+                        <div class="empty-state">
+                            <div class="big-emoji">✅</div>
+                            <p>Execute a análise para ver o relatório de qualidade dos dados</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== SEÇÃO: ESTRUTURA ===== -->
+            <div class="section" id="section-structure">
+                <div class="section-tabs">
+                    <button class="section-tab active" onclick="showSubsection('struct-cols', this)">Colunas</button>
+                    <button class="section-tab" onclick="showSubsection('struct-stats', this)">Estatísticas</button>
+                    <button class="section-tab" onclick="showSubsection('struct-charts', this)">Gráficos</button>
+                </div>
+
+                <div class="subsection active" id="sub-struct-cols">
+                    <div id="struct-cols-content">
+                        <div class="empty-state">
+                            <div class="big-emoji">📐</div>
+                            <p>Execute a análise para ver a estrutura das colunas</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="subsection" id="sub-struct-stats">
+                    <div id="struct-stats-content">
+                        <div class="empty-state">
+                            <div class="big-emoji">📊</div>
+                            <p>Execute a análise para ver estatísticas descritivas</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="subsection" id="sub-struct-charts">
+                    <div id="struct-charts-grid">
+                        <div class="empty-state">
+                            <div class="big-emoji">📈</div>
+                            <p>Execute para gerar gráficos</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== SEÇÃO: HIPÓTESES ===== -->
+            <div class="section" id="section-hypotheses">
+                <div class="section-tabs">
+                    <button class="section-tab active" onclick="showSubsection('hyp-all', this)">Todas</button>
+                    <button class="section-tab" onclick="showSubsection('hyp-confirmed', this)">Confirmadas</button>
+                    <button class="section-tab" onclick="showSubsection('hyp-refuted', this)">Refutadas</button>
+                    <button class="section-tab" onclick="showSubsection('hyp-partial', this)">Parciais</button>
+                </div>
+
+                <div class="subsection active" id="sub-hyp-all">
+                    <div id="hyp-all-content"></div>
+                </div>
+
+                <div class="subsection" id="sub-hyp-confirmed">
+                    <div id="hyp-confirmed-content"></div>
+                </div>
+
+                <div class="subsection" id="sub-hyp-refuted">
+                    <div id="hyp-refuted-content"></div>
+                </div>
+
+                <div class="subsection" id="sub-hyp-partial">
+                    <div id="hyp-partial-content"></div>
+                </div>
+            </div>
+
+            <!-- ===== SEÇÃO: VALIDADAS ===== -->
+            <div class="section" id="section-validated">
+                <div class="section-tabs">
+                    <button class="section-tab active" onclick="showSubsection('validated-cards', this)">Hipóteses</button>
+                    <button class="section-tab" onclick="showSubsection('validated-charts', this)">Gráficos</button>
+                </div>
+
+                <div class="subsection active" id="sub-validated-cards">
+                    <div id="validated-content"></div>
+                </div>
+
+                <div class="subsection" id="sub-validated-charts">
+                    <div id="validated-charts-grid" class="chart-grid"></div>
+                </div>
+            </div>
+
+            <!-- ===== SEÇÃO: INSIGHTS ===== -->
+            <div class="section" id="section-insights">
+                <div class="section-tabs">
+                    <button class="section-tab active" onclick="showSubsection('ins-all', this)">Todos</button>
+                    <button class="section-tab" onclick="showSubsection('ins-charts', this)">Gráficos</button>
+                </div>
+
+                <div class="subsection active" id="sub-ins-all">
+                    <div id="ins-all-content"></div>
+                </div>
+
+                <div class="subsection" id="sub-ins-charts">
+                    <div class="chart-grid" id="ins-charts-grid"></div>
+                </div>
+            </div>
+
+            <!-- ===== SEÇÃO: LOG ===== -->
+            <div class="section" id="section-log">
+                <div class="log-refresh" style="margin-bottom:1rem">
+                    <button class="btn-outline" onclick="fetchLog()" style="display:inline-flex;align-items:center;gap:0.5rem">
+                        🔄 Atualizar Log
+                    </button>
+                    <button class="btn-outline" onclick="clearLog()" style="display:inline-flex;align-items:center;gap:0.5rem">
+                        🗑️ Limpar
+                    </button>
+                </div>
+                <div class="section-tabs">
+                    <button class="section-tab active" onclick="showSubsection('log-all', this)">Todos</button>
+                    <button class="section-tab" onclick="showSubsection('log-errors', this)">Erros</button>
+                </div>
+
+                <div class="subsection active" id="sub-log-all">
+                    <div id="log-all-content">
+                        <div class="log-container" id="log-container">
+                            <div class="empty-state" id="log-empty">
+                                <div class="big-emoji">📋</div>
+                                <p>Execute a análise para ver o log de execução</p>
+                            </div>
+                            <div id="log-entries" style="display:none"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="subsection" id="sub-log-errors">
+                    <div id="log-errors-content">
+                        <div class="empty-state">
+                            <div class="big-emoji">⚠️</div>
+                            <p>Erros aparecerão aqui se ocorrerem</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+// ===== FILE UPLOAD =====
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+let selectedFile = null;
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) setFile(fileInput.files[0]); });
+
+function setFile(f) {
+    selectedFile = f;
+    document.getElementById('fileInfo').innerHTML = `<strong>${f.name}</strong> — ${(f.size / 1024).toFixed(1)} KB`;
+}
+
+// ===== NAVIGATION =====
+function showSection(name, el) {
+    // sections
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.getElementById(`section-${name}`).classList.add('active');
+    // sidebar
+    document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+    if (el) el.classList.add('active');
+    // save active tab per section
+    if (!window._sectionTabs) window._sectionTabs = {};
+    window._sectionTabs[name] = 'overview';
+}
+
+function showSubsection(name, el) {
+    // find parent section
+    const sub = document.getElementById(`sub-${name}`);
+    const section = sub.closest('.section');
+    const sectionId = section.id.replace('section-', '');
+
+    // deactivate all in section
+    section.querySelectorAll('.subsection').forEach(s => s.classList.remove('active'));
+    sub.classList.add('active');
+
+    // deactivate tabs
+    section.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+}
+
+// ===== PIPELINE =====
+function setStep(step, status) {
+    const el = document.querySelector(`.progress-step-item[data-step="${step}"]`);
+    if (!el) return;
+    el.classList.remove('done', 'active');
+    if (status === 'done') el.classList.add('done');
+    else if (status === 'active') el.classList.add('active');
+}
+
+async function runPipeline() {
+    if (!selectedFile) { alert('Selecione um arquivo primeiro'); return; }
+    const runBtn = document.getElementById('runBtn');
+    const progress = document.getElementById('progressBar');
+    const objective = document.getElementById('objectiveInput').value || 'Análise geral';
+    const persona = document.getElementById('personaInput').value || 'Analista de dados';
+    const llm = document.getElementById('llmSelect').value;
+
+    runBtn.disabled = true;
+    runBtn.innerHTML = '<span class="spinner"></span>Executando...';
+    progress.style.display = 'block';
+
+    const steps = ['load', 'structure', 'hypotheses', 'validate', 'insights'];
+    steps.forEach(s => setStep(s, ''));
+
+    // Start log polling
+    let logPolling = setInterval(fetchLog, 2000);
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('problem', `${objective} | Persona: ${persona}`);
+    formData.append('llm', llm);
+
+    try {
+        const resp = await fetch('/api/run', { method: 'POST', body: formData });
+        const data = await resp.json();
+
+        clearInterval(logPolling);
+        fetchLog(); // Final log fetch
+
+        if (data.status === 'success') {
+            steps.forEach(s => setStep(s, 'done'));
+            renderAll(data);
+        } else {
+            alert('Erro: ' + (data.detail || JSON.stringify(data)));
+        }
+    } catch (e) {
+        clearInterval(logPolling);
+        alert('Erro: ' + e.message);
+    } finally {
+        runBtn.disabled = false;
+        runBtn.innerHTML = '▶ Executar';
+    }
+}
+
+// ===== LOG =====
+let _lastLogLen = 0;
+let _logErrors = [];
+
+async function fetchLog() {
+    try {
+        const resp = await fetch('/api/log');
+        const data = await resp.json();
+        const logs = data.logs || [];
+
+        if (logs.length === 0) return;
+
+        document.getElementById('log-empty').style.display = 'none';
+        document.getElementById('log-entries').style.display = 'block';
+        document.getElementById('count-log').textContent = logs.length;
+
+        const errors = logs.filter(l => l.status === 'error');
+        const errorEl = document.getElementById('log-errors-content');
+        if (errors.length) {
+            errorEl.innerHTML = errors.map(e => `
+                <div class="log-entry error">
+                    <span class="log-step">${e.step}</span>
+                    <span class="log-msg">${e.message}</span>
+                </div>`).join('');
+        }
+
+        // Render new entries only
+        const newLogs = logs.slice(_lastLogLen);
+        if (newLogs.length > 0 || logs.length !== _lastLogLen) {
+            const entriesEl = document.getElementById('log-entries');
+            entriesEl.innerHTML = logs.map(l => {
+                const time = new Date().toLocaleTimeString('pt-BR');
+                return `<div class="log-entry ${l.status}">
+                    <span class="log-step">${l.step}</span>
+                    <span class="log-msg">${l.message}</span>
+                    <span class="log-time">${time}</span>
+                </div>`;
+            }).join('');
+            _lastLogLen = logs.length;
+            // Scroll to bottom
+            entriesEl.parentElement.scrollTop = entriesEl.parentElement.scrollHeight;
+        }
+    } catch (e) { /* silent fail on log fetch */ }
+}
+
+function clearLog() {
+    _lastLogLen = 0;
+    document.getElementById('log-empty').style.display = 'flex';
+    document.getElementById('log-entries').style.display = 'none';
+    document.getElementById('log-entries').innerHTML = '';
+    document.getElementById('count-log').textContent = '0';
+    document.getElementById('log-errors-content').innerHTML = `
+        <div class="empty-state">
+            <div class="big-emoji">⚠️</div>
+            <p>Erros aparecerão aqui se ocorrerem</p>
+        </div>`;
+}
+
+// ===== RENDER ALL =====
+function renderAll(data) {
+    const ds = data.dataset;
+    const hyps = data.hypotheses || [];
+    const insights = data.insights || [];
+
+    const confirmed = hyps.filter(h => h.status === 'CONFIRMADA').length;
+    const refuted = hyps.filter(h => h.status === 'REFUTADA').length;
+    const partial = hyps.length - confirmed - refuted;
+
+    // counts
+    document.getElementById('count-load').textContent = ds.rows.toLocaleString() + ' linhas';
+    document.getElementById('count-structure').textContent = ds.columns + ' colunas';
+    document.getElementById('count-hypotheses').textContent = hyps.length;
+    document.getElementById('count-validated').textContent = confirmed;
+    document.getElementById('count-insights').textContent = insights.length;
+
+    // === LOAD SECTION ===
+    document.getElementById('load-overview-content').innerHTML = `
+        <div class="stats-row">
+            <div class="stat-box"><div class="value">${ds.rows.toLocaleString()}</div><div class="label">Linhas</div></div>
+            <div class="stat-box"><div class="value">${ds.columns}</div><div class="label">Colunas</div></div>
+            <div class="stat-box"><div class="value">${hyps.length}</div><div class="label">Hipóteses</div></div>
+            <div class="stat-box"><div class="value">${insights.length}</div><div class="label">Insights</div></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><div class="card-title">📊 ${ds.name}</div></div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center">
+                <div>
+                    <div style="font-size:1.5rem;font-weight:700;color:${ds.quality.completeness > 80 ? 'var(--success)' : 'var(--warning)'}">${ds.quality.completeness}%</div>
+                    <div style="font-size:0.75rem;color:var(--text-dim)">Completude</div>
+                </div>
+                <div>
+                    <div style="font-size:1.5rem;font-weight:700;color:${ds.quality.duplicates === 0 ? 'var(--success)' : 'var(--danger)'}">${ds.quality.duplicates}</div>
+                    <div style="font-size:0.75rem;color:var(--text-dim)">Duplicados</div>
+                </div>
+                <div>
+                    <div style="font-size:1.5rem;font-weight:700;color:var(--accent)">${Object.keys(ds.quality.nulls || {}).length}</div>
+                    <div style="font-size:0.75rem;color:var(--text-dim)">Cols c/ Nulos</div>
+                </div>
+            </div>
+        </div>`;
+
+    // sample
+    const sample = ds.sample || [];
+    if (sample.length) {
+        const headers = Object.keys(sample[0]);
+        document.getElementById('load-sample-content').innerHTML = `
+            <div class="card">
+                <div class="card-header"><div class="card-title">🔎 Amostra (${sample.length} linhas)</div></div>
+                <div style="overflow-x:auto">
+                    <table class="col-table">
+                        <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+                        <tbody>
+                            ${sample.slice(0, 10).map(row => `<tr>${headers.map(h => `<td>${row[h] ?? ''}</td>`).join('')}</tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>`;
+    }
+
+    // quality
+    const nulls = ds.quality.nulls || {};
+    if (Object.keys(nulls).length) {
+        document.getElementById('load-quality-content').innerHTML = `
+            <div class="card">
+                <div class="card-header"><div class="card-title">✅ Qualidade dos Dados</div></div>
+                ${Object.entries(nulls).map(([col, pct]) => `
+                    <div style="margin-bottom:0.75rem">
+                        <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:0.3rem">
+                            <span>${col}</span>
+                            <span style="color:${pct > 20 ? 'var(--danger)' : 'var(--text-dim)'}">${pct}% nulos</span>
+                        </div>
+                        <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+                            <div style="height:100%;width:${pct}%;background:${pct > 20 ? 'var(--danger)' : 'var(--accent)'}"></div>
+                        </div>
+                    </div>`).join('')}
+            </div>`;
+    } else {
+        document.getElementById('load-quality-content').innerHTML = `
+            <div class="card">
+                <div class="card-header"><div class="card-title">✅ Qualidade dos Dados</div></div>
+                <div style="color:var(--success);text-align:center;padding:1rem">✓ Nenhuma coluna com problemas significativos</div>
+            </div>`;
+    }
+
+    // === CHARTS (from pipeline) ===
+    const chartsData = data.charts || {};
+    renderChartsFromData(chartsData);
+
+    // === STRUCTURE SECTION ===
+    const colTypes = ds.column_types || {};
+    document.getElementById('struct-cols-content').innerHTML = `
+        <div class="card">
+            <div class="card-header"><div class="card-title">📐 Colunas do Dataset</div><span class="badge badge-info">${ds.columns} colunas</span></div>
+            <table class="col-table">
+                <thead>
+                    <tr>
+                        <th>Coluna</th>
+                        <th>Tipo</th>
+                        <th>Nulos</th>
+                        <th>Únicos</th>
+                        <th>Exemplo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${(ds.columns_detail || []).map(col => `
+                        <tr>
+                            <td style="font-weight:500">${col.name}</td>
+                            <td><span class="type-badge type-${col.type === 'numeric' ? 'num' : col.type === 'string' ? 'str' : col.type === 'boolean' ? 'bool' : 'date'}">${col.type}</span></td>
+                            <td>${col.nulls || 0}%</td>
+                            <td>${col.unique || '-'}</td>
+                            <td style="color:var(--text-dim);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${col.example || '-'}</td>
+                        </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>`;
+
+    // stats
+    const numericCols = (ds.columns_detail || []).filter(c => c.type === 'numeric');
+    if (numericCols.length) {
+        document.getElementById('struct-stats-content').innerHTML = `
+            <div class="card">
+                <div class="card-header"><div class="card-title">📊 Estatísticas Numéricas</div></div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem">
+                    ${numericCols.map(col => `
+                        <div style="background:var(--surface2);border-radius:8px;padding:1rem">
+                            <div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:0.5rem">${col.name}</div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.8rem">
+                                <div>Média: <strong>${col.stats?.mean?.toFixed(2) ?? '-'}</strong></div>
+                                <div>Mediana: <strong>${col.stats?.median?.toFixed(2) ?? '-'}</strong></div>
+                                <div>Min: <strong>${col.stats?.min ?? '-'}</strong></div>
+                                <div>Max: <strong>${col.stats?.max ?? '-'}</strong></div>
+                                <div>Std: <strong>${col.stats?.std?.toFixed(2) ?? '-'}</strong></div>
+                                <div>% 0: <strong>${col.stats?.zero_pct?.toFixed(1) ?? '-'}%</strong></div>
+                            </div>
+                        </div>`).join('')}
+                </div>
+            </div>`;
+    }
+
+    // === HYPOTHESES ===
+    renderHypothesisSection('hyp-all', hyps, 'Todas as Hipóteses');
+    renderHypothesisSection('hyp-confirmed', hyps.filter(h => h.status === 'CONFIRMADA'), 'Hipóteses Confirmadas');
+    renderHypothesisSection('hyp-refuted', hyps.filter(h => h.status === 'REFUTADA'), 'Hipóteses Refutadas');
+    renderHypothesisSection('hyp-partial', hyps.filter(h => h.status !== 'CONFIRMADA' && h.status !== 'REFUTADA'), 'Hipóteses Parciais');
+
+    // === VALIDATED ===
+    const validated = hyps.filter(h => h.status === 'CONFIRMADA' || h.status === 'REFUTADA');
+    if (validated.length) {
+        document.getElementById('validated-content').innerHTML = `
+            <div class="stats-row">
+                <div class="stat-box"><div class="value" style="color:var(--success)">${confirmed}</div><div class="label">Confirmadas</div></div>
+                <div class="stat-box"><div class="value" style="color:var(--danger)">${refuted}</div><div class="label">Refutadas</div></div>
+                <div class="stat-box"><div class="value" style="color:var(--warning)">${partial}</div><div class="label">Parciais</div></div>
+                <div class="stat-box"><div class="value">${hyps.length}</div><div class="label">Total</div></div>
+            </div>
+            ${validated.map(h => `
+                <div class="hypothesis-card ${h.status === 'CONFIRMADA' ? 'confirmada' : 'refutada'}">
+                    <div class="hypothesis-title">${h.title}</div>
+                    <div class="hypothesis-desc">${h.description}</div>
+                    <div class="hypothesis-meta">
+                        <span class="badge badge-${h.status === 'CONFIRMADA' ? 'success' : 'danger'}">${h.status}</span>
+                        <span>Confiança: ${Math.round(h.confidence * 100)}%</span>
+                        <span>Impacto: ${h.expected_impact}</span>
+                    </div>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width:${Math.round(h.confidence * 100)}%;background:${h.status === 'CONFIRMADA' ? 'var(--success)' : 'var(--danger)'}"></div>
+                    </div>
+                </div>`).join('')}`;
+    }
+
+    // === INSIGHTS ===
+    if (insights.length) {
+        document.getElementById('ins-all-content').innerHTML = insights.map(i => `
+            <div class="insight-card">
+                <div class="insight-header">
+                    <span>💡</span>
+                    <span class="insight-title">${i.title}</span>
+                    <span class="badge badge-${i.business_impact === 'Alto' ? 'danger' : i.business_impact === 'Médio' ? 'warning' : 'info'}">${i.business_impact}</span>
+                </div>
+                <div class="insight-desc">${i.description}</div>
+                <div class="insight-recs">
+                    <strong>Recomendações:</strong>
+                    <ul>${(i.recommendations || []).map(r => `<li>${r}</li>`).join('')}</ul>
+                </div>
+            </div>`).join('');
+
+        // charts
+        document.getElementById('ins-charts-grid').innerHTML = insights.slice(0, 6).map((ins, idx) => `
+            <div class="chart-box">
+                <div class="chart-title">Insight ${idx + 1}: ${ins.title.slice(0, 40)}</div>
+                <div style="height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg);border-radius:8px;color:var(--text-dim);font-size:0.8rem;text-align:center;padding:1rem">
+                    ${ins.description.slice(0, 100)}...
+                </div>
+            </div>`).join('');
+    } else {
+        document.getElementById('ins-all-content').innerHTML = `
+            <div class="empty-state">
+                <div class="big-emoji">🔮</div>
+                <p>Executando análise para gerar insights...</p>
+            </div>`;
+    }
+
+    showSection('load', document.querySelector('.sidebar-item[onclick*="load"]'));
+}
+
+function renderHypothesisSection(id, hyps, title) {
+    const el = document.getElementById(`${id}-content`);
+    if (!el) return;
+    if (hyps.length) {
+        el.innerHTML = hyps.map(h => `
+            <div class="hypothesis-card ${h.status === 'CONFIRMADA' ? 'confirmada' : h.status === 'REFUTADA' ? 'refutada' : 'parcial'}">
+                <div class="hypothesis-title">${h.title}</div>
+                <div class="hypothesis-desc">${h.description}</div>
+                <div class="hypothesis-meta">
+                    <span class="badge badge-${h.status === 'CONFIRMADA' ? 'success' : h.status === 'REFUTADA' ? 'danger' : 'warning'}">${h.status}</span>
+                    <span>Confiança: ${Math.round(h.confidence * 100)}%</span>
+                    <span>Impacto: ${h.expected_impact}</span>
+                </div>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" style="width:${Math.round(h.confidence * 100)}%;background:${h.status === 'CONFIRMADA' ? 'var(--success)' : h.status === 'REFUTADA' ? 'var(--danger)' : 'var(--warning)'}"></div>
+                </div>
+            </div>`).join('');
+    } else {
+        el.innerHTML = `<div class="empty-state"><div class="big-emoji">💡</div><p>Nenhuma hipótese nesta categoria</p></div>`;
+    }
+}
+
+// ===== CHART RENDERER (no external deps) =====
+function renderChartsFromData(charts) {
+    const chartGrid = document.getElementById('struct-charts-grid');
+    if (!chartGrid || Object.keys(charts).length === 0) {
+        // Still render placeholder boxes
+        if (chartGrid) {
+            chartGrid.innerHTML = '<div class="empty-state"><div class="big-emoji">📈</div><p>Execute para gerar gráficos</p></div>';
+        }
+        return;
+    }
+
+    // Build HTML for each chart
+    let html = '';
+    for (const [chartId, chart] of Object.entries(charts)) {
+        html += `<div class="chart-box" id="chart-${chartId}">
+            <div class="chart-title">${chart.title || chartId}</div>
+            <div class="chart-canvas" id="canvas-${chartId}" style="height:200px;position:relative"></div>
+        </div>`;
+    }
+    chartGrid.innerHTML = html;
+
+    // Render each chart
+    for (const [chartId, chart] of Object.entries(charts)) {
+        const canvas = document.getElementById(`canvas-${chartId}`);
+        if (!canvas) continue;
+        renderChart(canvas, chart);
+    }
+}
+
+function renderChart(canvas, chart) {
+    try {
+        switch (chart.type) {
+            case 'bar':
+                renderBarChart(canvas, chart);
+                break;
+            case 'pie':
+                renderPieChart(canvas, chart);
+                break;
+            case 'gauge':
+                renderGaugeChart(canvas, chart);
+                break;
+            case 'histogram':
+                renderHistogramChart(canvas, chart);
+                break;
+            case 'heatmap':
+                renderHeatmapChart(canvas, chart);
+                break;
+            default:
+                canvas.innerHTML = `<div style="color:var(--text-dim);text-align:center;padding:2rem">Tipo: ${chart.type}</div>`;
+        }
+    } catch (e) {
+        canvas.innerHTML = `<div style="color:var(--danger);font-size:0.75rem;padding:1rem">Erro: ${e.message}</div>`;
+    }
+}
+
+function renderBarChart(canvas, chart) {
+    // Support both chart.data (labels/values inside data) and flat chart.labels/values
+    const labels = chart.data ? chart.data.labels : (chart.labels || []);
+    const values = chart.data ? chart.data.values : (chart.values || []);
+    const colors = chart.colors || [];
+    if (!labels || !values || labels.length === 0) {
+        canvas.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:2rem">Sem dados para exibir</div>';
+        return;
+    }
+
+    const maxVal = Math.max(...values.map(Math.abs));
+    const totalW = canvas.clientWidth || 400;
+    const barH = 20;
+    const gap = 6;
+    const labelW = Math.min(120, totalW * 0.3);
+    const chartW = totalW - labelW - 60;
+    const startX = labelW;
+    const totalH = labels.length * (barH + gap) + 20;
+
+    canvas.style.height = Math.max(200, totalH) + 'px';
+
+    let svg = `<svg width="${totalW}" height="${totalH}" style="display:block">`;
+    labels.forEach((label, i) => {
+        const y = i * (barH + gap);
+        const barW = maxVal > 0 ? (Math.abs(values[i]) / maxVal) * chartW : 0;
+        const color = colors[i] || '#06b6d4';
+        const barX = values[i] < 0 ? startX - barW : startX;
+
+        // Label
+        svg += `<text x="${labelW - 8}" y="${y + barH / 2 + 4}" 
+            text-anchor="end" font-size="11" fill="#71717a" font-family="system-ui">
+            ${label.length > 12 ? label.slice(0, 12) + '…' : label}</text>`;
+
+        // Bar
+        svg += `<rect x="${barX}" y="${y}" width="${barW}" height="${barH}" 
+            rx="3" fill="${color}" opacity="0.85"/>`;
+
+        // Value label
+        svg += `<text x="${startX + barW + 8}" y="${y + barH / 2 + 4}" 
+            font-size="11" fill="#e4e4e7" font-family="system-ui">
+            ${typeof values[i] === 'number' ? values[i].toFixed(2) : values[i]}</text>`;
+    });
+    svg += '</svg>';
+    canvas.innerHTML = svg;
+}
+
+function renderPieChart(canvas, chart) {
+    const labels = chart.labels || [];
+    const values = chart.values || [];
+    const colors = chart.colors || ['#06b6d4', '#a855f7', '#eab308', '#ec4899', '#22c55e', '#ef4444'];
+    if (!labels || !values || labels.length === 0) {
+        canvas.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:2rem">Sem dados para exibir</div>';
+        return;
+    }
+
+    const cx = canvas.clientWidth / 2 || 150;
+    const cy = 100;
+    const r = Math.min(cx, 90);
+    const total = values.reduce((a, b) => a + b, 0);
+
+    let html = '';
+    let startAngle = 0;
+
+    labels.forEach((label, i) => {
+        const angle = (values[i] / total) * 2 * Math.PI;
+        const x1 = cx + r * Math.cos(startAngle);
+        const y1 = cy + r * Math.sin(startAngle);
+        const x2 = cx + r * Math.cos(startAngle + angle);
+        const y2 = cy + r * Math.sin(startAngle + angle);
+        const largeArc = angle > Math.PI ? 1 : 0;
+
+        const color = colors[i % colors.length];
+        const midAngle = startAngle + angle / 2;
+        const labelR = r * 1.25;
+        const labelX = cx + labelR * Math.cos(midAngle);
+        const labelY = cy + labelR * Math.sin(midAngle);
+
+        html += `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc},1 ${x2},${y2} Z"
+            fill="${color}" opacity="0.85" stroke="none"/>`;
+
+        // Label
+        if (values[i] / total > 0.05) {
+            html += `<text x="${labelX}" y="${labelY}" text-anchor="middle" 
+                font-size="10" fill="white" font-weight="600" font-family="system-ui">
+                ${Math.round(values[i] / total * 100)}%</text>`;
+        }
+
+        startAngle += angle;
+    });
+
+    // Legend
+    const legendY = cy * 2 + 15;
+    let legend = `<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.5rem;justify-content:center">`;
+    labels.forEach((l, i) => {
+        legend += `<span style="font-size:0.7rem;color:var(--text-dim);display:flex;align-items:center;gap:0.25rem">
+            <span style="width:8px;height:8px;border-radius:2px;background:${colors[i % colors.length]}"></span>
+            ${l.length > 15 ? l.slice(0, 15) + '…' : l}
+        </span>`;
+    });
+    legend += '</div>';
+
+    canvas.innerHTML = `<svg width="${cx * 2}" height="${cy * 2}" style="display:block;margin:0 auto">${html}</svg>${legend}`;
+}
+
+function renderGaugeChart(canvas, chart) {
+    const value = chart.value || 0;
+    const color = chart.color || '#22c55e';
+    const cx = canvas.clientWidth / 2 || 150;
+    const r = Math.min(cx, 80);
+
+    // Background arc
+    const bgArc = describeArc(cx, 90, r, 200, 340);
+    // Value arc
+    const deg = 200 + (value / 100) * 140;
+    const valueArc = describeArc(cx, 90, r, 200, deg);
+
+    let svg = `<svg width="${cx * 2}" height="140" style="display:block;margin:0 auto">`;
+    svg += `<path d="${bgArc}" fill="none" stroke="#2a2d3a" stroke-width="12" stroke-linecap="round"/>`;
+    svg += `<path d="${valueArc}" fill="none" stroke="${color}" stroke-width="12" stroke-linecap="round"/>`;
+    svg += `<text x="${cx}" y="95" text-anchor="middle" font-size="24" font-weight="700" fill="${color}" font-family="system-ui">${value}%</text>`;
+    svg += `<text x="${cx}" y="115" text-anchor="middle" font-size="11" fill="#71717a" font-family="system-ui">${chart.title || ''}</text>`;
+    svg += '</svg>';
+    canvas.innerHTML = svg;
+}
+
+function describeArc(cx, cy, r, startAngle, endAngle) {
+    const s = startAngle * Math.PI / 180;
+    const e = endAngle * Math.PI / 180;
+    const x1 = cx + r * Math.cos(s), y1 = cy + r * Math.sin(s);
+    const x2 = cx + r * Math.cos(e), y2 = cy + r * Math.sin(e);
+    return `M${x1},${y1} A${r},${r} 0 0,1 ${x2},${y2}`;
+}
+
+function renderHistogramChart(canvas, chart) {
+    const { x, y } = chart.data;
+    if (!x || !y) return;
+
+    const maxY = Math.max(...y);
+    const h = 180;
+    const w = canvas.clientWidth || 400;
+    const barW = Math.max(4, (w - 40) / x.length - 2);
+
+    let svg = `<svg width="${w}" height="${h + 30}" style="display:block">`;
+    svg += `<g transform="translate(20, 10)">`;
+
+    // Bars
+    x.forEach((xi, i) => {
+        const barH = maxY > 0 ? (y[i] / maxY) * h : 0;
+        const bx = i * (barW + 2);
+        svg += `<rect x="${bx}" y="${h - barH}" width="${barW}" height="${barH}" 
+            rx="2" fill="#06b6d4" opacity="0.75"/>`;
+    });
+
+    // X axis
+    svg += `<line x1="0" y1="${h}" x2="${w - 40}" y2="${h}" stroke="#2a2d3a" stroke-width="1"/>`;
+    svg += `<text x="${w - 40}" y="${h + 15}" font-size="10" fill="#71717a" font-family="system-ui">${chart.x_label || ''}</text>`;
+    svg += '</g></svg>';
+    canvas.innerHTML = svg;
+}
+
+function renderHeatmapChart(canvas, chart) {
+    const { x, y, z } = chart.data;
+    if (!x || !y || !z) return;
+
+    const rows = y.length;
+    const cols = x.length;
+    const cellW = Math.max(40, Math.min(80, (canvas.clientWidth || 400) / cols));
+    const cellH = Math.max(30, Math.min(50, 180 / rows));
+    const w = cols * cellW + 60;
+    const h = rows * cellH + 60;
+
+    canvas.style.height = (h + 20) + 'px';
+
+    // Find min/max for color scale
+    let minVal = Infinity, maxVal = -Infinity;
+    z.forEach(row => row.forEach(v => { if (v < minVal) minVal = v; if (v > maxVal) maxVal = v; }));
+    const range = maxVal - minVal || 1;
+
+    // RdBu colorscale: red=high, blue=low
+    const colorscale = ['#2166ac', '#4393c3', '#92c5de', '#d1e5f0', '#f7f7f7', '#fddbc7', '#f4a582', '#d6604d', '#b2182b'];
+
+    function getColor(v) {
+        const t = Math.max(0, Math.min(1, (v - minVal) / range));
+        const idx = Math.floor(t * (colorscale.length - 1));
+        return colorscale[idx];
+    }
+
+    let svg = `<svg width="${w}" height="${h}" style="display:block">`;
+    svg += `<g transform="translate(50, 10)">`;
+
+    // Cells
+    z.forEach((row, ri) => {
+        row.forEach((val, ci) => {
+            const color = getColor(val);
+            const vx = ci * cellW;
+            const vy = ri * cellH;
+            svg += `<rect x="${vx}" y="${vy}" width="${cellW - 2}" height="${cellH - 2}" fill="${color}" rx="2"/>`;
+            svg += `<text x="${vx + cellW / 2}" y="${vy + cellH / 2 + 4}" 
+                text-anchor="middle" font-size="10" fill="white" font-weight="600" font-family="system-ui">
+                ${typeof val === 'number' ? val.toFixed(2) : val}</text>`;
+        });
+    });
+
+    // X labels
+    svg += `</g><g transform="translate(50, ${h - 5})">`;
+    x.forEach((label, i) => {
+        const lx = i * cellW + cellW / 2;
+        svg += `<text x="${lx}" y="0" text-anchor="middle" font-size="10" fill="#71717a" font-family="system-ui" transform="rotate(-30, ${lx}, 0)">${label.length > 8 ? label.slice(0, 8) : label}</text>`;
+    });
+    svg += '</g>';
+
+    // Y labels
+    svg += `<g transform="translate(10, 10)">`;
+    y.forEach((label, i) => {
+        const ly = i * cellH + cellH / 2 + 4;
+        svg += `<text x="0" y="${ly}" text-anchor="end" font-size="10" fill="#71717a" font-family="system-ui">${label.length > 10 ? label.slice(0, 10) : label}</text>`;
+    });
+    svg += '</g>';
+
+    svg += '</svg>';
+    canvas.innerHTML = svg;
+}
+
+// ===== VALIDATED CHARTS =====
+</script>
+</body>
+</html>

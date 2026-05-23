@@ -10,6 +10,7 @@ import polars as pl
 from ai_data_framework.core.entities import (
     Dataset,
     Hypothesis,
+    HypothesisStatus,
     Insight,
     PipelineContext,
 )
@@ -55,12 +56,21 @@ class AnalyticsPipeline:
         for col in self.context.dataset.schema.names():
             column_stats[col] = profiler.get_column_stats(col)
 
+        # Get correlation matrix
+        correlations = profiler.get_correlations()
+        correlation_dict = {}
+        for pair, corr_val in correlations.items():
+            if abs(corr_val) > 0.3:
+                correlation_dict[pair] = corr_val
+
+        suggestions = profiler.suggest_hypotheses()
+
         results = {
             "quality_metrics": quality_metrics,
             "column_stats": column_stats,
-            "suggestions": profiler.suggest_hypotheses(),
+            "correlations": correlation_dict,
+            "suggestions": suggestions,
         }
-
         self.context.metadata["profiling"] = results
         return results
 
@@ -99,6 +109,16 @@ class AnalyticsPipeline:
                         priority=1,
                     )
                     self.context.add_hypothesis(h)
+
+                # Ensure we have minimum 5 hypotheses — use rule-based as supplement
+                if len(self.context.hypotheses) < 5:
+                    generator = HypothesisGenerator(profiler_results)
+                    extra_hyps = generator.generate(problem_statement)
+                    existing_ids = {h.id for h in self.context.hypotheses}
+                    for h in extra_hyps:
+                        if h.id not in existing_ids:
+                            self.context.add_hypothesis(h)
+
                 return self.context.hypotheses
             except Exception:
                 # Fallback para geração rule-based
@@ -141,38 +161,63 @@ class AnalyticsPipeline:
             llm = None
 
         for hypothesis in self.context.get_confirmed_hypotheses():
-            if llm and hypothesis.validation_result:
-                try:
-                    llm_insight = llm.generate_insights(
-                        hypothesis=hypothesis.to_dict(),
-                        validation_results=hypothesis.validation_result,
-                    )
-                    insight = Insight(
-                        hypothesis_id=hypothesis.id,
-                        title=llm_insight.get("title", f"Insight: {hypothesis.title}"),
-                        description=llm_insight.get("description", hypothesis.description),
-                        metrics=llm_insight.get("metrics", hypothesis.validation_result.get("metrics", {})),
-                        recommendations=llm_insight.get("recommendations", [f"Validar: {hypothesis.title}"]),
-                        business_impact=llm_insight.get("business_impact", hypothesis.expected_impact),
-                        confidence=llm_insight.get("confidence", hypothesis.confidence),
-                    )
-                except Exception:
-                    insight = self._basic_insight(hypothesis)
-            else:
-                insight = self._basic_insight(hypothesis)
+            insight = self._make_insight(hypothesis, llm=llm)
+            insights.append(insight)
+            self.context.add_insight(insight)
 
+        # Also generate for partially confirmed (they still have useful info)
+        partial = [h for h in self.context.hypotheses if h.status == HypothesisStatus.PARCIALMENTE_CONFIRMADA]
+        for hypothesis in partial[:3]:  # top 3 partial
+            insight = self._make_insight(hypothesis, llm=llm)
             insights.append(insight)
             self.context.add_insight(insight)
 
         return insights
 
-    def _basic_insight(self, hypothesis: Hypothesis) -> Insight:
-        """Cria insight básico sem LLM."""
+    def _make_insight(self, hypothesis: Hypothesis, llm: LLMClient | None = None) -> Insight:
+        # Handle both dict and ValidationResult object
+        if hypothesis.validation_result:
+            if isinstance(hypothesis.validation_result, dict):
+                validation_result = hypothesis.validation_result
+            else:
+                validation_result = {
+                    "status": hypothesis.validation_result.status,
+                    "confidence": hypothesis.validation_result.confidence,
+                    "metrics": hypothesis.validation_result.metrics,
+                    "evidence": hypothesis.validation_result.evidence,
+                    "limitations": hypothesis.validation_result.limitations,
+                }
+        else:
+            validation_result = {
+                "status": hypothesis.status.value,
+                "confidence": hypothesis.confidence,
+                "metrics": {},
+                "evidence": "",
+                "limitations": [],
+            }
+
+        # Try to use LLM for enriched insights
+        if llm is not None:
+            try:
+                h_dict = hypothesis.to_dict()
+                llm_insight = llm.generate_insights(h_dict, validation_result)
+                return Insight(
+                    hypothesis_id=hypothesis.id,
+                    title=llm_insight.get("title", f"Insight: {hypothesis.title}"),
+                    description=llm_insight.get("description", hypothesis.description),
+                    metrics=llm_insight.get("metrics", validation_result.get("metrics", {})),
+                    recommendations=llm_insight.get("recommendations", [f"Validar: {hypothesis.title}"]),
+                    business_impact=llm_insight.get("business_impact", hypothesis.expected_impact),
+                    confidence=llm_insight.get("confidence", hypothesis.confidence),
+                )
+            except Exception:
+                pass  # Fall back to basic insight
+
         return Insight(
             hypothesis_id=hypothesis.id,
             title=f"Insight: {hypothesis.title}",
             description=hypothesis.description,
-            metrics=hypothesis.validation_result.get("metrics", {}) if hypothesis.validation_result else {},
+            metrics=validation_result.get("metrics", {}),
             recommendations=[f"Validar: {hypothesis.title}"],
             business_impact=hypothesis.expected_impact,
             confidence=hypothesis.confidence,
