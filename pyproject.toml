@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Framework analítico orientado a hipóteses para análise de dados com IA"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "pandas>=2.2.0",
     "numpy>=1.26.0",

@@ -1,359 +1,195 @@
-"""Gerador de hipóteses de negócio — focado em negócios, não em estatísticas."""
+"""Gerador de hipóteses DATA-DRIVEN — funciona com qualquer dataset."""
 
 from __future__ import annotations
 
 import uuid
 from typing import Any
 
-import polars as pl
-
 from ai_data_framework.core.entities import Hypothesis, HypothesisStatus
 
 
 class HypothesisGenerator:
-    """Gera hipóteses de negócio a partir de profiling de dados."""
+    """Gera hipóteses baseadas EM padrões reais extraídos do dataset fornecido."""
 
     def __init__(self, profiling_results: dict[str, Any]) -> None:
         self.profiling = profiling_results
+        self._col_stats: dict[str, Any] = self.profiling.get("column_stats", {})
+        self._quality: dict[str, Any] = self.profiling.get("quality_metrics", {})
+        self._corrs: dict[str, float] = self.profiling.get("correlations", {})
+        self._fact_col: str = ""
+        self._dimension_cols: list[str] = []
+        self._analyze_schema()
+
+    def _analyze_schema(self) -> None:
+        """Classifica colunas e identifica fato (alvo) vs dimensões."""
+        numeric_candidates = []
+        cat_cols = []
+
+        for col, stats in self._col_stats.items():
+            dtype = str(stats.get("dtype", "")).lower()
+            unique = stats.get("unique_count", 0)
+
+            if "int" in dtype or "float" in dtype:
+                if col not in ("data_id", "customer_id", "id"):
+                    score = stats.get("std", 0) * stats.get("mean", 1)
+                    numeric_candidates.append((col, score))
+            elif unique > 1 and unique < 100 and "bool" not in dtype:
+                cat_cols.append(col)
+
+        numeric_candidates.sort(key=lambda x: x[1], reverse=True)
+        if numeric_candidates:
+            self._fact_col = numeric_candidates[0][0]
+
+        self._dimension_cols = cat_cols
 
     def generate(self, problem_statement: str | None = None) -> list[Hypothesis]:
-        """Gera hipóteses de NEGÓCIO (não técnicas/estatísticas).
-
-        Exemplos de hipóteses de negócio:
-        - "Adicionar pão de queijo ao pedido aumenta ticket médio em R$12"
-        - "Clientes com score < 4.0 churnam 3x mais"
-        - "Região Norte tem receita 40% abaixo da média"
-        - "Clientes que compram mais de 3 itens têm 2x mais chance de voltar"
-        - "Cupons de desconto atraem novos clientes mas reduzem margem"
-        """
+        """Gera hipóteses DIRETAMENTE extraídas dos dados — SEM inventar nada."""
         hypotheses: list[Hypothesis] = []
 
-        if not self.profiling:
-            return hypotheses
+        hypotheses.extend(self._quality_hypotheses())
+        hypotheses.extend(self._correlation_hypotheses())
+        if self._col_stats:
+            hypotheses.extend(self._dimension_hypotheses())
+            hypotheses.extend(self._churn_hypotheses())
+            hypotheses.extend(self._outlier_hypotheses())
 
-        col_stats = self.profiling.get("column_stats", {})
-        quality = self.profiling.get("quality_metrics", {})
-        correlations = self.profiling.get("correlations", {})
-        column_names = list(col_stats.keys())
+        return hypotheses[:10]
 
-        # Detect what type of business this is from column names
-        business_type = self._detect_business_type(column_names)
-
-        # === HIPÓTESES DE RECEITA / VENDAS ===
-        hypotheses.extend(self._revenue_hypotheses(col_stats, correlations, business_type))
-
-        # === HIPÓTESES DE CLIENTES / CHURN ===
-        hypotheses.extend(self._customer_hypotheses(col_stats, correlations, business_type))
-
-        # === HIPÓTESES DE REGIÃO / LOCALIZAÇÃO ===
-        hypotheses.extend(self._regional_hypotheses(col_stats, correlations, business_type))
-
-        # === HIPÓTESES DE PRODUTO / CATEGORIA ===
-        hypotheses.extend(self._product_hypotheses(col_stats, correlations, business_type))
-
-        # === HIPÓTESES DE SATISFAÇÃO ===
-        hypotheses.extend(self._satisfaction_hypotheses(col_stats, correlations, business_type))
-
-        # === HIPÓTESES DE TEMPORALIDADE ===
-        hypotheses.extend(self._temporal_hypotheses(col_stats, business_type))
-
-        # === HIPÓTESES DE OPORTUNIDADE / CRESCIMENTO ===
-        hypotheses.extend(self._growth_hypotheses(col_stats, correlations, business_type))
-
-        # Limitar a 12 hipóteses mais relevantes
-        hypotheses = hypotheses[:12]
-
-        return hypotheses
-
-    def _detect_business_type(self, column_names: list[str]) -> dict[str, Any]:
-        """Detecta o tipo de negócio baseado nos nomes das colunas."""
-        cols_lower = [c.lower() for c in column_names]
-
-        business_type = "varejo"  # default
-
-        keywords = {
-            "cafeteria": ["bebida", "cafe", "coffee", "pastel", "suco", "lanche"],
-            "restaurante": ["prato", "mesa", "garcom", "conta", "comanda"],
-            "e-commerce": ["pedido", "frete", "entrega", "carrinho", "checkout"],
-            "saas": ["assinatura", "plan", "subscription", "monthly", "annual"],
-            "marketplace": ["vendedor", "anunciante", "taxa", "comissao"],
-        }
-
-        for btype, kws in keywords.items():
-            if any(kw in " ".join(cols_lower) for kw in kws):
-                business_type = btype
-                break
-
-        return {"type": business_type, "columns": column_names}
-
-    def _revenue_hypotheses(
-        self, col_stats: dict, correlations: dict, business: dict
-    ) -> list[Hypothesis]:
-        """Hipóteses sobre receita e vendas."""
+    def _quality_hypotheses(self) -> list[Hypothesis]:
         hyps = []
+        nulls = self._quality.get("null_percent", {})
+        total = self._quality.get("total_rows", 1)
 
-        # Check for revenue column
-        revenue_col = self._find_column(col_stats.keys(), ["revenue", "valor", "total", "venda"])
-        cost_col = self._find_column(col_stats.keys(), ["cost", "custo", "despesa"])
-        quantity_col = self._find_column(col_stats.keys(), ["quantity", "qtd", "quantidade", "itens"])
-
-        if revenue_col:
-            stats = col_stats.get(revenue_col, {})
-
-            # Ticket médio / comportamento de compra
-            hyps.append(Hypothesis(
-                id=str(uuid.uuid4())[:8],
-                title="Ticket médio varia por comportamento de compra",
-                description="Clientes que adicionam itens complementares têm ticket significativamente maior",
-                business_logic="Oferecer sugestões de itens complementares no momento da compra pode aumentar o ticket em 15-25%",
-                expected_impact="Alto",
-                confidence=0.6,
-                priority=1,
-            ))
-
-            # Margem de lucro
-            if cost_col:
+        for col, pct in nulls.items():
+            if pct > 1:
                 hyps.append(Hypothesis(
                     id=str(uuid.uuid4())[:8],
-                    title="Margem de lucro varia por categoria de produto",
-                    description="Algumas categorias têm margem maior que outras — focar em produtos de alta margem pode melhorar rentabilidade",
-                    business_logic="Identificar categorias de alta margem e priorizá-las no mix de vendas",
-                    expected_impact="Alto",
-                    confidence=0.7,
-                    priority=1,
+                    title=f"Coluna '{col}' tem {pct:.1f}% de valores ausentes",
+                    description=f"Dados missing em '{col}' comprometem análises que dependem dessa variável",
+                    business_logic="Investigar causa raiz dos missing antes de usar essa coluna em decisões",
+                    expected_impact="Alto" if pct > 10 else "Médio",
+                    confidence=min(pct / 100, 0.95),
+                    priority=1 if pct > 20 else 3,
                 ))
 
-            # Quantidade e ticket
-            if quantity_col:
-                hyps.append(Hypothesis(
-                    id=str(uuid.uuid4())[:8],
-                    title="Clientes que compram mais itens têm ticket médio maior",
-                    description="Existe correlação entre quantidade de itens por transação e valor total",
-                    business_logic="Estratégias de cross-sell e upsell podem aumentar o volume por transação",
-                    expected_impact="Médio",
-                    confidence=0.6,
-                    priority=2,
-                ))
-
-        return hyps
-
-    def _customer_hypotheses(
-        self, col_stats: dict, correlations: dict, business: dict
-    ) -> list[Hypothesis]:
-        """Hipóteses sobre clientes e churn."""
-        hyps = []
-
-        churn_col = self._find_column(col_stats.keys(), ["churn", "cancel", "abandono", "lost"])
-        satisfaction_col = self._find_column(col_stats.keys(), ["satisfaction", "nota", "score", "avaliacao"])
-        customer_col = self._find_column(col_stats.keys(), ["customer", "cliente", "user"])
-
-        if satisfaction_col:
-            stats = col_stats.get(satisfaction_col, {})
-            mean_score = stats.get("mean", 0)
-
-            # Score de satisfação e impacto em churn/retenção
+        dup = self._quality.get("duplicate_rows", 0)
+        if dup > 0:
             hyps.append(Hypothesis(
                 id=str(uuid.uuid4())[:8],
-                title="Clientes insatisfeitos (score < 4.0) têm taxa de churn significativamente maior",
-                description=f"Score médio atual é {mean_score:.1f}/5 — clientes abaixo disso têm maior propensão ao abandono",
-                business_logic="Identificar clientes insatisfeitos permite ação proativa de retenção (offer, desconto, contato)",
-                expected_impact="Alto",
-                confidence=0.7,
-                priority=1,
-            ))
-
-            # Satisfação e recorrência
-            hyps.append(Hypothesis(
-                id=str(uuid.uuid4())[:8],
-                title="Clientes satisfeitos (score > 4.5) compram com maior frequência",
-                description="Clientes com alta satisfação tendem a comprar mais vezes no mesmo período",
-                business_logic="Focar em Satisfação para melhorar recorrência e LTV do cliente",
+                title=f"Dataset tem {dup} linhas duplicadas ({dup / total * 100:.1f}% do total)",
+                description="Linhas duplicadas superestimam métricas e distorcem análises",
+                business_logic="Remover duplicatas para garantir integridade dos dados",
                 expected_impact="Médio",
-                confidence=0.6,
+                confidence=min(dup / total, 0.9),
                 priority=2,
             ))
+        return hyps
 
-        if satisfaction_col and churn_col:
+    def _correlation_hypotheses(self) -> list[Hypothesis]:
+        hyps = []
+        # Filtrar pares onde ambas colunas são IDs (correlação espúria)
+        id_cols = {"id", "data_id", "customer_id", "user_id", "order_id", "product_id"}
+        strong = [
+            (k, v) for k, v in self._corrs.items()
+            if abs(v) > 0.5
+            and not (
+                k.split("__")[0] in id_cols or k.split("__")[1] in id_cols
+            )
+        ]
+        for pair, corr_val in strong[:6]:
+            col1, col2 = pair.split("__")
+            direction = "positiva" if corr_val > 0 else "negativa"
             hyps.append(Hypothesis(
                 id=str(uuid.uuid4())[:8],
-                title="Clientes novos têm maior risco de churn nos primeiros 30 dias",
-                description="Período inicial é crítico para retenção — onboarding deficient leads a abandono",
-                business_logic="Programa de onboarding e primeira experiência positiva reduz churn inicial",
-                expected_impact="Alto",
-                confidence=0.5,
-                priority=2,
+                title=f"Correlação {direction} forte entre '{col1}' e '{col2}' (r={corr_val:.2f})",
+                description=f"r={corr_val:.2f} indica que variações em '{col1}' estão fortemente associadas a '{col2}'",
+                business_logic=f"Se '{col1}' causa '{col2}': controlar '{col1}' para impactar '{col2}'",
+                expected_impact="Médio" if abs(corr_val) < 0.8 else "Alto",
+                confidence=abs(corr_val),
+                priority=2 if abs(corr_val) > 0.7 else 3,
             ))
+        return hyps
 
-        if customer_col:
+    def _dimension_hypotheses(self) -> list[Hypothesis]:
+        hyps = []
+        if not self._fact_col:
+            return hyps
+
+        fact_stats = self._col_stats.get(self._fact_col, {})
+        fact_mean = fact_stats.get("mean", 0)
+
+        for dim in self._dimension_cols[:5]:
+            dim_stats = self._col_stats.get(dim, {})
+            unique = dim_stats.get("unique_count", 0)
+            if unique < 2 or unique > 50:
+                continue
+
+            title = self._build_dimension_hypothesis(dim)
             hyps.append(Hypothesis(
                 id=str(uuid.uuid4())[:8],
-                title="Clientes recorrentes geram mais receita que clientes novos",
-                description="Clientes existentes têm ticket médio maior e menor custo de aquisição",
-                business_logic="Investir em retenção e fidelidade tem ROI superior a aquisição de novos clientes",
+                title=title,
+                description=f"Variável '{dim}' tem {unique} valores únicos e deve influir em '{self._fact_col}' (média={fact_mean:.1f})",
+                business_logic=f"Segmentar análise por '{dim}' para identificar padrões",
+                expected_impact="Alto" if unique <= 10 else "Médio",
+                confidence=0.65,
+                priority=1 if unique <= 5 else 2,
+            ))
+        return hyps
+
+    def _build_dimension_hypothesis(self, dim: str) -> str:
+        dl = dim.lower()
+        fc = self._fact_col
+
+        if any(k in dl for k in ["region", "zona", "estado", "cidade", "pais"]):
+            return f"'{fc}' varia significativamente por região ('{dim}')"
+        if any(k in dl for k in ["categoria", "tipo", "produto", "segmento"]):
+            return f"'{fc}' varia por categoria ('{dim}')"
+        if any(k in dl for k in ["customer", "cliente", "usuario"]):
+            return f"'{fc}' varia por perfil de cliente ('{dim}')"
+        if any(k in dl for k in ["status", "estado"]):
+            return f"'{fc}' é determinado pelo status ('{dim}')"
+        if any(k in dl for k in ["canal", "meio", "origem", "source"]):
+            return f"'{fc}' varia conforme canal ('{dim}')"
+        if any(k in dl for k in ["dia", "mes", "ano", "week", "day", "month", "year"]):
+            return f"'{fc}' varia ao longo do tempo ({dim})"
+        if any(k in dl for k in ["satisf", "score", "rating"]):
+            return f"'{fc}' correlaciona com score de satisfação ('{dim}')"
+        return f"'{fc}' varia conforme '{dim}'"
+
+    def _churn_hypotheses(self) -> list[Hypothesis]:
+        hyps = []
+        churn_col = next((c for c in self._col_stats if "churn" in c.lower()), None)
+        sat_col = next((c for c in self._col_stats
+                       if any(k in c.lower() for k in ["satisf", "score", "rating"]) and
+                       any(t in str(self._col_stats[c].get("dtype", "")).lower() for t in ("int", "float"))), None)
+
+        if churn_col and sat_col:
+            hyps.append(Hypothesis(
+                id=str(uuid.uuid4())[:8],
+                title=f"Clientes com '{sat_col}' baixo têm maior probabilidade de '{churn_col}'",
+                description="Score de satisfação é preditor known de churn — clientes com score abaixo da média tendem a churnar mais",
+                business_logic="Priorizar ações de retention em clientes com score baixo",
                 expected_impact="Alto",
-                confidence=0.7,
+                confidence=0.75,
                 priority=1,
             ))
-
         return hyps
-
-    def _regional_hypotheses(
-        self, col_stats: dict, correlations: dict, business: dict
-    ) -> list[Hypothesis]:
-        """Hipóteses sobre regiões/geografia."""
-        hyps = []
-
-        region_col = self._find_column(col_stats.keys(), ["region", "regiao", "cidade", "estado", "bairro"])
-        revenue_col = self._find_column(col_stats.keys(), ["revenue", "valor", "total"])
-
-        if region_col:
-            hyps.append(Hypothesis(
-                id=str(uuid.uuid4())[:8],
-                title="Receita varia significativamente por região",
-                description="Algumas regiões têm performance acima ou abaixo da média — entender motivos permite ação",
-                business_logic="Regiões com baixa performance podem se beneficiar de estratégias regionalizadas (mix de produtos, preços, promoções)",
-                expected_impact="Alto",
-                confidence=0.6,
-                priority=1,
-            ))
-
-            hyps.append(Hypothesis(
-                id=str(uuid.uuid4())[:8],
-                title="Regiões com maior volume de clientes concentram mais receita",
-                description="Regiões com mais clientes nem sempre são as de maior receita — entender conversão é chave",
-                business_logic="Analisar eficiência de conversão por região para otimizar investimento",
-                expected_impact="Médio",
-                confidence=0.5,
-                priority=2,
-            ))
-
-        return hyps
-
-    def _product_hypotheses(
-        self, col_stats: dict, correlations: dict, business: dict
-    ) -> list[Hypothesis]:
-        """Hipóteses sobre produtos/categorias."""
-        hyps = []
-
-        product_col = self._find_column(col_stats.keys(), ["product", "produto", "categoria", "category", "tipo"])
-        revenue_col = self._find_column(col_stats.keys(), ["revenue", "valor", "total"])
-
-        if product_col:
-            hyps.append(Hypothesis(
-                id=str(uuid.uuid4())[:8],
-                title="Certain categorias de produto têm maior rentabilidade",
-                description="Nem todos os produtos contribuem igualmente para o lucro — algumas categorias são mais estratégicas",
-                business_logic="Focar em categorias de alta rentabilidade no mix de vendas e em promoções",
-                expected_impact="Alto",
-                confidence=0.6,
-                priority=1,
-            ))
-
-            hyps.append(Hypothesis(
-                id=str(uuid.uuid4())[:8],
-                title="Clientes que compram categorias diversas têm maior lifetime value",
-                description="Cross-category clients tem maior retenção e valor no longo prazo",
-                business_logic="Estratégias de bundling e cross-categorias aumentam LTV",
-                expected_impact="Médio",
-                confidence=0.5,
-                priority=2,
-            ))
-
-        return hyps
-
-    def _satisfaction_hypotheses(
-        self, col_stats: dict, correlations: dict, business: dict
-    ) -> list[Hypothesis]:
-        """Hipóteses sobre satisfação."""
-        hyps = []
-
-        satisfaction_col = self._find_column(col_stats.keys(), ["satisfaction", "nota", "score", "avaliacao"])
-
-        if satisfaction_col:
-            hyps.append(Hypothesis(
-                id=str(uuid.uuid4())[:8],
-                title="Clientes com satisfação entre 4.0-4.5 são os que mais pedem reembolso/cancelamento",
-                description="O ponto médio é perigoso — clientes razoavelmente satisfeitos mas não encantandos",
-                business_logic="Programa de encantamento para clientes no faixa 4.0-4.5 pode reduzir cancelamentos",
-                expected_impact="Alto",
-                confidence=0.5,
-                priority=2,
-            ))
-
-        return hyps
-
-    def _temporal_hypotheses(
-        self, col_stats: dict, business: dict
-    ) -> list[Hypothesis]:
-        """Hipóteses sobre temporalidade."""
-        hyps = []
-
-        timestamp_col = self._find_column(col_stats.keys(), ["timestamp", "date", "data", "hora", "time"])
-
-        hyps.append(Hypothesis(
-            id=str(uuid.uuid4())[:8],
-            title="Receita apresenta variação por período (dia/semana/mês)",
-            description="Identificar sazonalidade permite planejamento de estoque, staffing e campanhas",
-            business_logic="Sazonalidade bem explorada pode aumentar receita em 10-20% em períodos altos",
-            expected_impact="Alto",
-            confidence=0.5,
-            priority=2,
-        ))
-
-        hyps.append(Hypothesis(
-            id=str(uuid.uuid4())[:8],
-            title="Horário de pico concentra 60% das vendas",
-            description="Se existe horário de pico, otimizar staffing nesse período aumenta eficiência",
-            business_logic="Match de oferta com demanda reduz waiting time e melhora satisfação",
-            expected_impact="Médio",
-            confidence=0.5,
-            priority=3,
-        ))
-
-        return hyps
-
-    def _growth_hypotheses(
-        self, col_stats: dict, correlations: dict, business: dict
-    ) -> list[Hypothesis]:
-        """Hipóteses de crescimento/oportunidade."""
-        hyps = []
-
-        # Oportunidade de upsell
-        hyps.append(Hypothesis(
-            id=str(uuid.uuid4())[:8],
-            title="Adicionar item complementar ao pedido aumenta ticket médio em 15-25%",
-            description="Cross-sell bem executado aumenta revenue sem aumentar custo de aquisição",
-            business_logic="Treinar equipe/vender sugestões de Add-on no momento da compra",
-            expected_impact="Alto",
-            confidence=0.7,
-            priority=1,
-        ))
-
-        # Oportunidade de recorrência
-        hyps.append(Hypothesis(
-            id=str(uuid.uuid4())[:8],
-            title="Programa de fidelidade pode aumentar recorrência em 20%",
-            description="Clientes em programa de fidelidade compram mais frequentemente",
-            business_logic="Investir em programa de pontos/recompensas para aumentar recorrência",
-            expected_impact="Alto",
-            confidence=0.6,
-            priority=2,
-        ))
-
-        return hyps
-
-    def _find_column(self, columns: list[str], keywords: list[str]) -> str | None:
-        """Encontra coluna que corresponde a uma das keywords."""
-        for col in columns:
-            col_lower = col.lower()
-            for kw in keywords:
-                if kw in col_lower:
-                    return col
-        return None
 
     def prioritize(self, hypotheses: list[Hypothesis]) -> list[Hypothesis]:
-        """Ordena hipóteses por prioridade (impacto + confiança)."""
-        return sorted(
-            hypotheses,
-            key=lambda h: (h.priority, -h.confidence),
-        )
+        """Ordena hipóteses por prioridade (menor número = mais importante)."""
+        return sorted(hypotheses, key=lambda h: (h.priority, -h.confidence))
+
+    def _outlier_hypotheses(self) -> list[Hypothesis]:
+        hyps = []
+        for col, stats in self._col_stats.items():
+            if stats.get("high_variance") and col not in ("data_id", "customer_id"):
+                hyps.append(Hypothesis(
+                    id=str(uuid.uuid4())[:8],
+                    title=f"Coluna '{col}' tem alta variabilidade — investigar outliers",
+                    description=f"std/mean elevado indica presença de outliers ou subgrupos distintos em '{col}'",
+                    business_logic="Analisar distribuição de '{col}' por segmentos antes de usar em decisões",
+                    expected_impact="Médio",
+                    confidence=0.55,
+                    priority=3,
+                ))
+        return hyps
