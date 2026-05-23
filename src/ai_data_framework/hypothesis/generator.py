@@ -70,6 +70,8 @@ class HypothesisGenerator:
                     expected_impact="Alto" if pct > 10 else "Médio",
                     confidence=min(pct / 100, 0.95),
                     priority=1 if pct > 20 else 3,
+                    fact_metric=col if self._col_stats.get(col, {}).get("dtype", "").lower() in ("int", "float") else None,
+                    fact_aggregation="sum" if self._col_stats.get(col, {}).get("dtype", "").lower() in ("int", "float") else "count",
                 ))
 
         dup = self._quality.get("duplicate_rows", 0)
@@ -82,6 +84,8 @@ class HypothesisGenerator:
                 expected_impact="Médio",
                 confidence=min(dup / total, 0.9),
                 priority=2,
+                fact_metric=list(self._col_stats.keys())[0] if self._col_stats else None,
+                fact_aggregation="count",
             ))
         return hyps
 
@@ -107,6 +111,9 @@ class HypothesisGenerator:
                 expected_impact="Médio" if abs(corr_val) < 0.8 else "Alto",
                 confidence=abs(corr_val),
                 priority=2 if abs(corr_val) > 0.7 else 3,
+                fact_metric=col1,
+                fact_aggregation="sum",
+                dimension=col2,
             ))
         return hyps
 
@@ -133,6 +140,9 @@ class HypothesisGenerator:
                 expected_impact="Alto" if unique <= 10 else "Médio",
                 confidence=0.65,
                 priority=1 if unique <= 5 else 2,
+                fact_metric=self._fact_col,
+                fact_aggregation="sum",
+                dimension=dim,
             ))
         return hyps
 
@@ -172,6 +182,9 @@ class HypothesisGenerator:
                 expected_impact="Alto",
                 confidence=0.75,
                 priority=1,
+                fact_metric=sat_col,
+                fact_aggregation="avg",
+                dimension=churn_col,
             ))
         return hyps
 
@@ -191,5 +204,6 @@ class HypothesisGenerator:
                     expected_impact="Médio",
                     confidence=0.55,
                     priority=3,
+                    fact_metric=col,
                 ))
         return hyps

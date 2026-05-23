@@ -257,6 +257,130 @@ class LiteLLMClient(BaseLLMClient):
             return f"[LiteLLM Error: {e}]"
 
 
+class OpenRouterClient(BaseLLMClient):
+    """Cliente para OpenRouter (modelos free disponíveis)."""
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = "deepseek/deepseek-v4-flash:free",
+        base_url: str = "https://openrouter.ai/api/v1",
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+    ) -> None:
+        super().__init__(
+            api_key=api_key or os.environ.get("OPENROUTER_API_KEY", ""),
+            model=model,
+            base_url=base_url,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        self.base_url = base_url
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+
+    def generate(self, prompt: str, system: str | None = None, **kwargs: Any) -> str:
+        """Gera texto usando OpenRouter API (OpenAI-compatível)."""
+        if not self.api_key:
+            return self._fallback_response(prompt)
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "HTTP-Referer": "https://github.com/ai-data-framework",
+            "X-Title": "AI Data Framework",
+            "content-type": "application/json",
+        }
+
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            "temperature": kwargs.get("temperature", self.temperature),
+            "messages": messages,
+        }
+
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+        except httpx.HTTPError as e:
+            return f"[OpenRouter Error: {e}]"
+
+    def _fallback_response(self, prompt: str) -> str:
+        return f"[OpenRouter] Simulating response for: {prompt[:80]}..."
+
+
+class OpenCodeGoClient(BaseLLMClient):
+    """Cliente para OpenCode Go (gateway OpenAI-compatível)."""
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = "glm-5.1",
+        base_url: str = "https://opencode.ai/zen/go/v1",
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+    ) -> None:
+        super().__init__(
+            api_key=api_key or os.environ.get("OPENCODE_API_KEY", ""),
+            model=model,
+            base_url=base_url,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        self.base_url = base_url
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+
+    def generate(self, prompt: str, system: str | None = None, **kwargs: Any) -> str:
+        """Gera texto usando OpenCode Go API (OpenAI-compatível)."""
+        if not self.api_key:
+            return self._fallback_response(prompt)
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "content-type": "application/json",
+        }
+
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            "temperature": kwargs.get("temperature", self.temperature),
+            "messages": messages,
+        }
+
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data["choices"][0]["message"]["content"]
+        except httpx.HTTPError as e:
+            return f"[OpenCode Go Error: {e}]"
+
+    def _fallback_response(self, prompt: str) -> str:
+        return f"[OpenCode Go] Simulating response for: {prompt[:80]}..."
+
+
 class LLMClient:
     """Facede para clientes LLM com factory."""
 
@@ -265,11 +389,13 @@ class LLMClient:
         "openai": OpenAIClient,
         "minimax": MiniMaxClient,
         "litellm": LiteLLMClient,
+        "openrouter": OpenRouterClient,
+        "opencode-go": OpenCodeGoClient,
     }
 
     def __init__(
         self,
-        provider: Literal["anthropic", "openai", "minimax", "litellm"] = "minimax",
+        provider: Literal["anthropic", "openai", "minimax", "litellm", "openrouter", "opencode-go"] = "minimax",
         model: str | None = None,
         api_key: str | None = None,
         **kwargs: Any,
@@ -285,6 +411,8 @@ class LLMClient:
             "openai": "gpt-4o",
             "minimax": "MiniMax-M2.7",
             "litellm": "anthropic/claude-sonnet-4-20250514",
+            "openrouter": "deepseek/deepseek-v4-flash:free",
+            "opencode-go": "glm-5.1",
         }
 
         self.client = client_class(
@@ -320,6 +448,9 @@ class LLMClient:
 
 Sua função é analisar DESCRIÇÕES DE PROBLEMAS DE NEGÓCIO e dados para formular hipóteses que um tomador de decisão (CEO, Gerente, Diretor) usaria para tomar decisões.
 
+Use o Método Fato-Dimensão: cada hipótese deve cruzar uma métrica numérica (Fato)
+com um contexto/filtro categórico (Dimensão). Ex: "faturamento (Fato) por categoria (Dimensão)".
+
 Cada hipótese deve seguir o formato:
 - ID único (H1, H2, etc.)
 - Título: pergunta de negócio clara
@@ -327,6 +458,9 @@ Cada hipótese deve seguir o formato:
 - Lógica de negócio: por que isso importa para o negócio
 - Impacto esperado: Alto / Médio / Baixo
 - Confiança inicial: 0.0 a 1.0
+- Métrica (fact_metric): coluna numérica que representa a métrica a medir (ex: valor_venda, quantidade)
+- Agregação (fact_aggregation): sum, avg, count, min, max
+- Dimensão (dimension): coluna categórica para agrupar/filtrar (ex: categoria, região, mês)
 
 REGRAS:
 - Hipóteses devem ser sobre resultados de negócio, não sobre qualidade técnica de dados
@@ -360,7 +494,11 @@ Gere entre 6-10 hipóteses de negócio no seguinte formato:
     "description": "...",
     "business_logic": "...",
     "expected_impact": "Alto",
-    "confidence": 0.65
+    "confidence": 0.65,
+    "fact_metric": "valor_venda",
+    "fact_aggregation": "sum",
+    "dimension": "categoria",
+    "dimension_values": ["eletrônicos", "vestuário"]
   }}
 ]
 
@@ -413,6 +551,9 @@ Priorize hipóteses que:
                 "business_logic": "Redução de ticket indica menor volume de compra por cliente",
                 "expected_impact": "Alto",
                 "confidence": 0.5,
+                "fact_metric": "valor_venda",
+                "fact_aggregation": "avg",
+                "dimension": "categoria",
             },
             {
                 "id": "H2",
@@ -421,6 +562,9 @@ Priorize hipóteses que:
                 "business_logic": "Queda na recorrência reduz revenue previsível",
                 "expected_impact": "Alto",
                 "confidence": 0.5,
+                "fact_metric": "quantidade",
+                "fact_aggregation": "count",
+                "dimension": "mes",
             },
         ]
 

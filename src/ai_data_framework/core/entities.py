@@ -72,6 +72,13 @@ class Hypothesis:
     status: HypothesisStatus = HypothesisStatus.PENDENTE
     validation_result: ValidationResult | None = None
     priority: int = 0
+    version: int = 1
+    created_at: str | None = None
+    # Campos Fato-Dimensão (exemplo.md)
+    fact_metric: str | None = None       # Coluna da métrica (ex: "valor_venda")
+    fact_aggregation: str = "sum"        # Agregação: sum, avg, count, min, max
+    dimension: str | None = None         # Coluna da dimensão (ex: "categoria")
+    dimension_values: list[str] | None = None  # Valores específicos da dimensão (opcional)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -84,7 +91,42 @@ class Hypothesis:
             "status": self.status.value,
             "validation_result": self.validation_result,
             "priority": self.priority,
+            "version": self.version,
+            "created_at": self.created_at,
+            "fact_metric": self.fact_metric,
+            "fact_aggregation": self.fact_aggregation,
+            "dimension": self.dimension,
+            "dimension_values": self.dimension_values,
         }
+
+    def bump_version(self) -> None:
+        """Incrementa versão ao modificar."""
+        self.version += 1
+
+    def save(self, path: str | None = None) -> str:
+        """Persiste a hipótese em JSON para disco.
+
+        Args:
+            path: caminho do arquivo. Se None, usa {id}_v{version}.json.
+
+        Returns:
+            Caminho do arquivo escrito.
+        """
+        import json
+        if path is None:
+            path = f"{self.id}_v{self.version}.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
+        return path
+
+    @classmethod
+    def load(cls, path: str) -> Hypothesis:
+        """Carrega uma hipótese de um arquivo JSON."""
+        import json
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        data.pop("hypothesis_id", None)
+        return cls(**data)
 
 
 @dataclass(slots=True)
@@ -98,6 +140,12 @@ class Insight:
     recommendations: list[str]
     business_impact: str
     confidence: float
+    version: int = 1
+    created_at: str | None = None
+    # Campos Fato-Dimensão (exemplo.md)
+    fact_metric: str | None = None       # Coluna da métrica analisada
+    fact_aggregation: str = "sum"        # Agregação usada
+    dimension: str | None = None         # Coluna da dimensão analisada
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -108,7 +156,37 @@ class Insight:
             "recommendations": self.recommendations,
             "business_impact": self.business_impact,
             "confidence": self.confidence,
+            "version": self.version,
+            "created_at": self.created_at,
         }
+
+    def bump_version(self) -> None:
+        """Incrementa versão ao modificar."""
+        self.version += 1
+
+    def save(self, path: str | None = None) -> str:
+        """Persiste o insight em JSON para disco.
+
+        Args:
+            path: caminho do arquivo. Se None, usa {hypothesis_id}_insight_v{version}.json.
+
+        Returns:
+            Caminho do arquivo escrito.
+        """
+        import json
+        if path is None:
+            path = f"{self.hypothesis_id}_insight_v{self.version}.json"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
+        return path
+
+    @classmethod
+    def load(cls, path: str) -> Insight:
+        """Carrega um insight de um arquivo JSON."""
+        import json
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return cls(**data)
 
 
 @dataclass

@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
 
-from ai_data_framework.pipeline.orchestrator import AnalyticsPipeline
 from ai_data_framework.core.entities import HypothesisStatus
+from ai_data_framework.pipeline.orchestrator import AnalyticsPipeline
 
 console = Console()
 
@@ -126,7 +125,7 @@ def _run_pipeline() -> None:
 
             t4 = progress.add_task("[cyan]Validando hipóteses...", total=None)
             validated = pipeline.validate_hypotheses()
-            progress.update(t4, description=f"[green]✓ Hipóteses validadas")
+            progress.update(t4, description="[green]✓ Hipóteses validadas")
 
             t5 = progress.add_task("[cyan]Gerando insights...", total=None)
             insights = pipeline.generate_insights()
@@ -252,7 +251,7 @@ def _run_validate() -> None:
         refuted = len([h for h in validated if h.status == HypothesisStatus.REFUTADA])
         partial = len([h for h in validated if h.status == HypothesisStatus.PARCIALMENTE_CONFIRMADA])
 
-        console.print(f"\n[bold]Summary:[/bold]")
+        console.print("\n[bold]Summary:[/bold]")
         console.print(f"  [green]✓ Confirmadas: {confirmed}[/green]")
         console.print(f"  [red]✗ Refutadas: {refuted}[/red]")
         console.print(f"  [yellow]~ Parciais: {partial}[/yellow]")
@@ -286,7 +285,7 @@ def _run_dashboard() -> None:
 
         exported = pipeline.create_dashboard(output_dir)
 
-        console.print(f"\n[bold green]✓ Dashboard exportado![/bold green]\n")
+        console.print("\n[bold green]✓ Dashboard exportado![/bold green]\n")
         console.print(f"[bold]Arquivos gerados em:[/bold] {output_dir}")
         for name, path in exported.items():
             console.print(f"  • {name}: {path}")
@@ -298,15 +297,80 @@ def _run_dashboard() -> None:
 
 
 def _run_hypotheses() -> None:
-    """Mostra hipóteses geradas."""
-    console.print("[yellow]Funcionalidade em desenvolvimento[/yellow]")
-    console.print("Use: ai-data run <source> para executar pipeline completo")
+    """Mostra hipóteses persistidas."""
+    from ai_data_framework.core.entities import Hypothesis, HypothesisStatus
+
+    hyps_dir = Path.home() / ".ai-data" / "hypotheses"
+    if not hyps_dir.exists():
+        console.print("[yellow]Nenhuma hipótese persistida encontrada.[/yellow]")
+        console.print("Execute 'ai-data run <source>' primeiro para gerar hipóteses.")
+        return
+
+    json_files = sorted(hyps_dir.glob("H*_v*.json"))
+    if not json_files:
+        console.print("[yellow]Nenhuma hipótese persistida encontrada.[/yellow]")
+        return
+
+    table = Table(show_header=True, title="Hipóteses Persistentes")
+    table.add_column("ID", style="cyan")
+    table.add_column("Título", style="white")
+    table.add_column("Status", style="bold")
+    table.add_column("Confiança")
+    table.add_column("Impacto")
+
+    for fp in json_files:
+        try:
+            h = Hypothesis.load(str(fp))
+            status_color = {
+                HypothesisStatus.CONFIRMADA: "green",
+                HypothesisStatus.REFUTADA: "red",
+                HypothesisStatus.PARCIALMENTE_CONFIRMADA: "yellow",
+                HypothesisStatus.PENDENTE: "dim",
+            }.get(h.status, "white")
+            table.add_row(
+                h.id,
+                h.title[:45] + "..." if len(h.title) > 45 else h.title,
+                f"[{status_color}]{h.status.value}[/{status_color}]",
+                f"{h.confidence:.0%}",
+                h.expected_impact,
+            )
+        except Exception as e:
+            table.add_row(fp.stem, f"[red]Erro ao ler: {e}[/red]", "", "", "")
+
+    console.print(table)
+    console.print(f"\n[bold]{len(json_files)} hipótese(s) encontrada(s)[/bold]")
 
 
 def _run_insights() -> None:
-    """Mostra insights gerados."""
-    console.print("[yellow]Funcionalidade em desenvolvimento[/yellow]")
-    console.print("Use: ai-data run <source> para executar pipeline completo")
+    """Mostra insights persistidos."""
+    from ai_data_framework.core.entities import Insight
+
+    hyps_dir = Path.home() / ".ai-data" / "hypotheses"
+    if not hyps_dir.exists():
+        console.print("[yellow]Nenhum insight persistido encontrado.[/yellow]")
+        console.print("Execute 'ai-data run <source>' primeiro para gerar insights.")
+        return
+
+    json_files = sorted(hyps_dir.glob("*_insight_v*.json"))
+    if not json_files:
+        console.print("[yellow]Nenhum insight persistido encontrado.[/yellow]")
+        return
+
+    for i, fp in enumerate(json_files, 1):
+        try:
+            ins = Insight.load(str(fp))
+            console.print(f"\n[bold cyan]{i}. {ins.title}[/bold cyan]")
+            console.print(f"   ID: {ins.hypothesis_id} | Impacto: {ins.business_impact} | Confiança: {ins.confidence:.0%}")
+            if ins.description:
+                desc = ins.description[:200] + "..." if len(ins.description) > 200 else ins.description
+                console.print(f"   {desc}")
+            if ins.recommendations:
+                for rec in ins.recommendations[:3]:
+                    console.print(f"   → {rec}")
+        except Exception as e:
+            console.print(f"\n[red]Erro ao ler {fp.name}: {e}[/red]")
+
+    console.print(f"\n[bold]{len(json_files)} insight(s) encontrado(s)[/bold]")
 
 
 def _show_summary(context: Any) -> None:

@@ -174,7 +174,7 @@ def _build_charts(pipeline: AnalyticsPipeline) -> dict[str, Any]:
     return charts
 
 
-async def run_pipeline_stream(source: str, problem: str | None, llm_provider: str, filename: str = "dataset"):
+async def run_pipeline_stream(source: str, problem: str | None, llm_provider: str, api_key: str | None = None, model: str | None = None, filename: str = "dataset"):
     """Executa o pipeline com streaming de logs."""
     global _pipeline_log
     _pipeline_log.clear()
@@ -184,7 +184,7 @@ async def run_pipeline_stream(source: str, problem: str | None, llm_provider: st
         _log("init", f"Problema: {problem or 'Análise geral'}")
         _log("init", f"LLM: {llm_provider}")
 
-        pipeline = AnalyticsPipeline(llm_provider=llm_provider)
+        pipeline = AnalyticsPipeline(llm_provider=llm_provider, api_key=api_key, model=model) if model else AnalyticsPipeline(llm_provider=llm_provider, api_key=api_key)
 
         # Load data
         _log("load", "Carregando arquivo...")
@@ -344,6 +344,8 @@ async def run(
     file: UploadFile,
     problem: str = "Análise geral",
     llm: str = "minimax",
+    api_key: str | None = None,
+    model: str | None = None,
 ) -> JSONResponse:
     """Run pipeline on uploaded file."""
     suffix = Path(file.filename or "tmp").suffix.lower()
@@ -354,7 +356,7 @@ async def run(
         tmp_path = tmp.name
 
     try:
-        result = await run_pipeline_stream(tmp_path, problem, llm, filename=file.filename or "dataset")
+        result = await run_pipeline_stream(tmp_path, problem, llm, api_key=api_key, model=model, filename=file.filename or "dataset")
         return JSONResponse(content=result)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=f"Arquivo não encontrado: {e}")

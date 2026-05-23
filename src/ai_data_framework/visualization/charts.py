@@ -14,12 +14,37 @@ import polars as pl
 class ChartGenerator:
     """Gera visualizações a partir de dados."""
 
-    def __init__(self, df: pl.LazyFrame | pl.DataFrame) -> None:
+    def __init__(self, df: pl.LazyFrame | pl.DataFrame, source: str | None = None, period: str | None = None) -> None:
         self.df = df
+        self.source = source
+        self.period = period
 
     def _collect(self) -> pl.DataFrame:
         """Helper para coletar LazyFrame."""
         return self.df.collect() if isinstance(self.df, pl.LazyFrame) else self.df
+
+    def _add_metadata(self, fig: go.Figure, source: str | None = None, period: str | None = None) -> go.Figure:
+        """Adiciona fonte e período ao gráfico como annotation."""
+        src = source or self.source or ""
+        prd = period or self.period or ""
+
+        notes = []
+        if src:
+            notes.append(f"Fonte: {src}")
+        if prd:
+            notes.append(f"Período: {prd}")
+
+        if notes:
+            fig.add_annotation(
+                text=" | ".join(notes),
+                xref="paper", yref="paper",
+                x=1, y=-0.15,
+                showarrow=False,
+                font=dict(size=10, color="gray"),
+                align="right",
+            )
+
+        return fig
 
     def bar_chart(
         self,
@@ -28,8 +53,10 @@ class ChartGenerator:
         title: str = "",
         color: str | None = None,
         orientation: str = "v",
+        source: str | None = None,
+        period: str | None = None,
     ) -> go.Figure:
-        """Cria gráfico de barras."""
+        """Cria gráfico de barras com metadata."""
         data = self._collect()
         fig = px.bar(
             data,
@@ -39,6 +66,7 @@ class ChartGenerator:
             title=title,
             orientation=orientation if orientation == "h" else None,
         )
+        fig = self._add_metadata(fig, source=source, period=period)
         fig.update_layout(template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
         return fig
 
@@ -48,10 +76,13 @@ class ChartGenerator:
         title: str = "",
         nbins: int = 30,
         color: str | None = None,
+        source: str | None = None,
+        period: str | None = None,
     ) -> go.Figure:
         """Cria histograma."""
         data = self._collect()
         fig = px.histogram(data, x=x, nbins=nbins, color=color, title=title)
+        fig = self._add_metadata(fig, source=source, period=period)
         fig.update_layout(
             template="plotly_dark",
             margin=dict(l=40, r=40, t=60, b=40),
@@ -67,6 +98,8 @@ class ChartGenerator:
         title: str = "",
         size: str | None = None,
         hover_data: list[str] | None = None,
+        source: str | None = None,
+        period: str | None = None,
     ) -> go.Figure:
         """Cria gráfico de dispersão."""
         data = self._collect()
@@ -79,6 +112,7 @@ class ChartGenerator:
             title=title,
             hover_data=hover_data or [],
         )
+        fig = self._add_metadata(fig, source=source, period=period)
         fig.update_layout(template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
         return fig
 
@@ -88,10 +122,13 @@ class ChartGenerator:
         values: str,
         title: str = "",
         hole: float = 0.4,
+        source: str | None = None,
+        period: str | None = None,
     ) -> go.Figure:
         """Cria gráfico de pizza/donut."""
         data = self._collect()
         fig = px.pie(data, names=names, values=values, title=title, hole=hole)
+        fig = self._add_metadata(fig, source=source, period=period)
         fig.update_layout(template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
         return fig
 
@@ -102,10 +139,13 @@ class ChartGenerator:
         title: str = "",
         color: str | None = None,
         markers: bool = False,
+        source: str | None = None,
+        period: str | None = None,
     ) -> go.Figure:
         """Cria gráfico de linha."""
         data = self._collect()
         fig = px.line(data, x=x, y=y, color=color, title=title, markers=markers)
+        fig = self._add_metadata(fig, source=source, period=period)
         fig.update_layout(template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
         return fig
 
@@ -115,10 +155,13 @@ class ChartGenerator:
         x: str | None = None,
         title: str = "",
         color: str | None = None,
+        source: str | None = None,
+        period: str | None = None,
     ) -> go.Figure:
         """Cria box plot."""
         data = self._collect()
         fig = px.box(data, x=x, y=y, color=color, title=title)
+        fig = self._add_metadata(fig, source=source, period=period)
         fig.update_layout(template="plotly_dark", margin=dict(l=40, r=40, t=60, b=40))
         return fig
 
@@ -128,6 +171,8 @@ class ChartGenerator:
         y: list[str] | None = None,
         z: list[list[float]] | None = None,
         title: str = "",
+        source: str | None = None,
+        period: str | None = None,
     ) -> go.Figure:
         """Cria heatmap de correlação."""
         if z is None:
@@ -151,6 +196,7 @@ class ChartGenerator:
             colorscale="RdBu",
             zmid=0,
         ))
+        fig = self._add_metadata(fig, source=source, period=period)
         fig.update_layout(
             title=title,
             template="plotly_dark",
@@ -358,10 +404,15 @@ class ChartGenerator:
 class DashboardBuilder:
     """Constrói dashboards completos."""
 
-    def __init__(self, df: pl.LazyFrame | pl.DataFrame) -> None:
+    def __init__(
+        self,
+        df: pl.LazyFrame | pl.DataFrame,
+        source: str | None = None,
+        period: str | None = None,
+    ) -> None:
         self.df = df
         self.charts: dict[str, go.Figure] = {}
-        self._charts = ChartGenerator(df)
+        self._charts = ChartGenerator(df, source=source, period=period)
 
     def add_quality_dashboard(self, quality_metrics: dict[str, Any]) -> "DashboardBuilder":
         """Adiciona dashboard de qualidade."""
