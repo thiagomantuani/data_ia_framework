@@ -522,23 +522,16 @@ function setFile(f) {
 }
 
 // ===== NAVIGATION =====
-function showSection(name, el) {
-    // sections
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.getElementById(`section-${name}`).classList.add('active');
-    // sidebar
-    document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
-    if (el) el.classList.add('active');
-    // save active tab per section
-    if (!window._sectionTabs) window._sectionTabs = {};
-    window._sectionTabs[name] = 'overview';
-}
-
 function showSubsection(name, el) {
     // find parent section
     const sub = document.getElementById(`sub-${name}`);
+    if (!sub) return;
     const section = sub.closest('.section');
     const sectionId = section.id.replace('section-', '');
+
+    // Activate parent section so subsections become visible
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    section.classList.add('active');
 
     // deactivate all in section
     section.querySelectorAll('.subsection').forEach(s => s.classList.remove('active'));
@@ -546,7 +539,42 @@ function showSubsection(name, el) {
 
     // deactivate tabs
     section.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
-    el.classList.add('active');
+    if (el) el.classList.add('active');
+
+    // Persist active subsection per section so showSection can restore it
+    if (!window._sectionTabs) window._sectionTabs = {};
+    window._sectionTabs[sectionId] = name;
+}
+
+function showSection(name, el) {
+    // sections
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.getElementById(`section-${name}`).classList.add('active');
+    // sidebar
+    document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+    if (el) el.classList.add('active');
+    // Restore previously active subsection for this section, or default to first tab
+    if (window._sectionTabs && window._sectionTabs[name]) {
+        const savedSubId = window._sectionTabs[name];
+        const subEl = document.getElementById(`sub-${savedSubId}`);
+        const tabEl = document.querySelector(`#section-${name} .section-tab[onclick*="${savedSubId}"]`);
+        if (subEl && tabEl) {
+            const sectionEl = document.getElementById(`section-${name}`);
+            sectionEl.querySelectorAll('.subsection').forEach(s => s.classList.remove('active'));
+            sectionEl.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
+            subEl.classList.add('active');
+            tabEl.classList.add('active');
+            return;
+        }
+    }
+    // default: activate first tab + subsection of the section
+    const sectionEl = document.getElementById(`section-${name}`);
+    if (sectionEl) {
+        const firstTab = sectionEl.querySelector('.section-tab');
+        const firstSub = sectionEl.querySelector('.subsection');
+        if (firstTab) firstTab.classList.add('active');
+        if (firstSub) firstSub.classList.add('active');
+    }
 }
 
 // ===== PIPELINE =====
@@ -751,6 +779,9 @@ function renderAll(data) {
     const chartsData = data.charts || {};
     renderChartsFromData(chartsData);
 
+    // === VALIDATED CHARTS ===
+    renderValidatedCharts(hyps, ds);
+
     // === STRUCTURE SECTION ===
     const colTypes = ds.column_types || {};
     document.getElementById('struct-cols-content').innerHTML = `
@@ -833,37 +864,223 @@ function renderAll(data) {
                 </div>`).join('')}`;
     }
 
-    // === INSIGHTS ===
-    if (insights.length) {
-        document.getElementById('ins-all-content').innerHTML = insights.map(i => `
-            <div class="insight-card">
-                <div class="insight-header">
-                    <span>💡</span>
-                    <span class="insight-title">${i.title}</span>
-                    <span class="badge badge-${i.business_impact === 'Alto' ? 'danger' : i.business_impact === 'Médio' ? 'warning' : 'info'}">${i.business_impact}</span>
-                </div>
-                <div class="insight-desc">${i.description}</div>
-                <div class="insight-recs">
-                    <strong>Recomendações:</strong>
-                    <ul>${(i.recommendations || []).map(r => `<li>${r}</li>`).join('')}</ul>
-                </div>
-            </div>`).join('');
+    // ===== VALIDATED CHARTS =====
+function renderValidatedCharts(hyps, ds) {
+    const grid = document.getElementById('validated-charts-grid');
+    if (!grid) return;
 
-        // charts
-        document.getElementById('ins-charts-grid').innerHTML = insights.slice(0, 6).map((ins, idx) => `
-            <div class="chart-box">
-                <div class="chart-title">Insight ${idx + 1}: ${ins.title.slice(0, 40)}</div>
-                <div style="height:120px;display:flex;align-items:center;justify-content:center;background:var(--bg);border-radius:8px;color:var(--text-dim);font-size:0.8rem;text-align:center;padding:1rem">
-                    ${ins.description.slice(0, 100)}...
-                </div>
-            </div>`).join('');
-    } else {
-        document.getElementById('ins-all-content').innerHTML = `
-            <div class="empty-state">
-                <div class="big-emoji">🔮</div>
-                <p>Executando análise para gerar insights...</p>
-            </div>`;
+    const confirmed = hyps.filter(h => h.status === 'CONFIRMADA');
+    const refuted = hyps.filter(h => h.status === 'REFUTADA');
+    const partial = hyps.filter(h => h.status === 'PARCIALMENTE_CONFIRMADA');
+
+    if (hyps.length === 0) {
+        grid.innerHTML = '<div class="empty-state"><div class="big-emoji">📊</div><p>Nenhuma hipótese validada</p></div>';
+        return;
     }
+
+    let html = '';
+
+    // 1. Hypothesis status pie
+    const statusCounts = { CONFIRMADA: confirmed.length, REFUTADA: refuted.length, PARCIALMENTE_CONFIRMADA: partial.length };
+    html += `<div class="chart-box">
+        <div class="chart-title">Status das Hipóteses</div>
+        <div class="chart-canvas" id="canvas-validated-pie" style="height:200px;position:relative"></div>
+    </div>`;
+    html += `<div class="chart-box">
+        <div class="chart-title">Distribuição por Confiança</div>
+        <div class="chart-canvas" id="canvas-validated-confidence" style="height:200px;position:relative"></div>
+    </div>`;
+
+    grid.innerHTML = html;
+
+    // Render pie
+    const pieCanvas = document.getElementById('canvas-validated-pie');
+    if (pieCanvas) {
+        renderChart(pieCanvas, {
+            type: 'pie',
+            title: 'Status das Hipóteses',
+            labels: Object.keys(statusCounts),
+            values: Object.values(statusCounts),
+            colors: ['#22c55e', '#ef4444', '#eab308'],
+        });
+    }
+
+    // Render confidence bar (all hypotheses sorted by confidence)
+    const confCanvas = document.getElementById('canvas-validated-confidence');
+    if (confCanvas) {
+        const sorted = [...hyps].sort((a, b) => b.confidence - a.confidence);
+        const labels = sorted.map(h => h.title.slice(0, 15));
+        const values = sorted.map(h => Math.round(h.confidence * 100));
+        const colors = sorted.map(h => h.status === 'CONFIRMADA' ? '#22c55e' : h.status === 'REFUTADA' ? '#ef4444' : '#eab308');
+        renderChart(confCanvas, {
+            type: 'bar',
+            title: 'Confiança por Hipótese',
+            data: { labels, values },
+            colors,
+        });
+    }
+
+    // 2. Impact analysis heatmap (if we have metrics)
+    const hypsWithMetrics = hyps.filter(h => h.validation_result && h.validation_result.metrics && Object.keys(h.validation_result.metrics).length > 0);
+    if (hypsWithMetrics.length >= 2) {
+        const metricNames = new Set();
+        hypsWithMetrics.forEach(h => Object.keys(h.validation_result.metrics).forEach(k => metricNames.add(k)));
+        const metricArr = Array.from(metricNames).slice(0, 6);
+        const hypLabels = hypsWithMetrics.map(h => h.title.slice(0, 12));
+
+        if (metricArr.length >= 2) {
+            const z = hypsWithMetrics.map(h => metricArr.map(m => h.validation_result.metrics[m] ?? 0));
+            const heatmapHtml = `<div class="chart-box" style="grid-column: 1 / -1">
+                <div class="chart-title">Métricas das Hipóteses Validadas</div>
+                <div class="chart-canvas" id="canvas-validated-heatmap" style="height:240px;position:relative"></div>
+            </div>`;
+            grid.innerHTML += heatmapHtml;
+            const hmCanvas = document.getElementById('canvas-validated-heatmap');
+            if (hmCanvas) {
+                renderChart(hmCanvas, {
+                    type: 'heatmap',
+                    title: 'Métricas',
+                    data: { x: metricArr, y: hypLabels, z },
+                });
+            }
+        }
+    }
+
+    // 3. Correlation heatmap for numeric columns (from dataset)
+    const numCols = (ds.columns_detail || []).filter(c => c.type === 'numeric').slice(0, 8);
+    if (numCols.length >= 2) {
+        const colNames = numCols.map(c => c.name);
+        const z = colNames.map((c1, i) =>
+            colNames.map((c2, j) => {
+                if (i === j) return 1;
+                if (i > j) return null;
+                // Compute correlation from data
+                return computeSimpleCorr(ds.sample || [], c1, c2);
+            })
+        );
+        const heatmapHtml = `<div class="chart-box" style="grid-column: 1 / -1">
+            <div class="chart-title">Correlações entre Colunas Numéricas</div>
+            <div class="chart-canvas" id="canvas-col-correlations" style="height:260px;position:relative"></div>
+        </div>`;
+        grid.innerHTML += heatmapHtml;
+        const hmCanvas = document.getElementById('canvas-col-correlations');
+        if (hmCanvas) {
+            renderChart(hmCanvas, {
+                type: 'heatmap',
+                title: 'Correlações',
+                data: { x: colNames, y: colNames, z },
+            });
+        }
+    }
+}
+
+function computeSimpleCorr(sample, col1, col2) {
+    if (!sample || sample.length === 0) return 0;
+    const pairs = sample.filter(r => r[col1] != null && r[col2] != null && !isNaN(r[col1]) && !isNaN(r[col2]));
+    if (pairs.length < 3) return 0;
+    const n = pairs.length;
+    const mean1 = pairs.reduce((s, r) => s + Number(r[col1]), 0) / n;
+    const mean2 = pairs.reduce((s, r) => s + Number(r[col2]), 0) / n;
+    const num = pairs.reduce((s, r) => s + (Number(r[col1]) - mean1) * (Number(r[col2]) - mean2), 0);
+    const den1 = Math.sqrt(pairs.reduce((s, r) => s + Math.pow(Number(r[col1]) - mean1, 2), 0));
+    const den2 = Math.sqrt(pairs.reduce((s, r) => s + Math.pow(Number(r[col2]) - mean2, 2), 0));
+    if (den1 === 0 || den2 === 0) return 0;
+    return num / (den1 * den2);
+}
+
+// ===== INSIGHT CHARTS =====
+function renderInsightCharts(insights) {
+    const grid = document.getElementById('ins-charts-grid');
+    if (!grid) return;
+
+    if (!insights || insights.length === 0) {
+        grid.innerHTML = '<div class="empty-state"><div class="big-emoji">🔮</div><p>Execute para gerar insights</p></div>';
+        return;
+    }
+
+    let html = '';
+    insights.slice(0, 6).forEach((ins, idx) => {
+        const impactColor = ins.business_impact === 'Alto' ? '#ef4444' : ins.business_impact === 'Médio' ? '#eab308' : '#06b6d4';
+        html += `<div class="chart-box">
+            <div class="chart-title">${ins.title.slice(0, 40)}</div>
+            <div class="chart-canvas" id="canvas-insight-${idx}" style="height:180px;position:relative;display:flex;flex-direction:column;gap:0.5rem;align-items:center;justify-content:center;"></div>
+        </div>`;
+    });
+    grid.innerHTML = html;
+
+    insights.slice(0, 6).forEach((ins, idx) => {
+        const canvas = document.getElementById(`canvas-insight-${idx}`);
+        if (!canvas) return;
+
+        const metrics = ins.metrics || {};
+        const metricKeys = Object.keys(metrics).slice(0, 4);
+        const metricVals = metricKeys.map(k => typeof metrics[k] === 'number' ? Math.round(metrics[k] * 100) / 100 : metrics[k]);
+
+        if (metricKeys.length >= 2) {
+            const isNumeric = metricVals.every(v => typeof v === 'number');
+            if (isNumeric) {
+                renderChart(canvas, {
+                    type: 'bar',
+                    title: ins.title,
+                    data: { labels: metricKeys, values: metricVals },
+                    colors: ['#06b6d4', '#a855f7', '#eab308', '#ec4899'],
+                });
+            } else {
+                renderChart(canvas, {
+                    type: 'pie',
+                    title: ins.title,
+                    labels: metricKeys,
+                    values: metricVals.map(v => typeof v === 'string' ? v.length : v),
+                    colors: ['#06b6d4', '#a855f7', '#eab308', '#ec4899'],
+                });
+            }
+        } else if (metricKeys.length === 1) {
+            // Single metric: show gauge-like bar
+            const val = metricVals[0];
+            if (typeof val === 'number') {
+                const pct = Math.min(100, Math.max(0, val));
+                canvas.innerHTML = `
+                    <div style="text-align:center;width:100%">
+                        <div style="font-size:1.5rem;font-weight:700;color:var(--accent)">${val}</div>
+                        <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:0.5rem">${metricKeys[0]}</div>
+                        <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden;width:80%;margin:0 auto">
+                            <div style="height:100%;width:${pct}%;background:var(--accent);border-radius:4px"></div>
+                        </div>
+                    </div>`;
+            } else {
+                canvas.innerHTML = `<div style="color:var(--text-dim);font-size:0.85rem;text-align:center">${ins.description.slice(0, 80)}...</div>`;
+            }
+        } else {
+            canvas.innerHTML = `<div style="color:var(--text-dim);font-size:0.8rem;text-align:center;padding:1rem">${ins.description.slice(0, 100)}...</div>`;
+        }
+    });
+}
+
+// ===== INSIGHTS SECTION =====
+if (insights.length) {
+    document.getElementById('ins-all-content').innerHTML = insights.map(i => `
+        <div class="insight-card">
+            <div class="insight-header">
+                <span>💡</span>
+                <span class="insight-title">${i.title}</span>
+                <span class="badge badge-${i.business_impact === 'Alto' ? 'danger' : i.business_impact === 'Médio' ? 'warning' : 'info'}">${i.business_impact}</span>
+            </div>
+            <div class="insight-desc">${i.description}</div>
+            <div class="insight-recs">
+                <strong>Recomendações:</strong>
+                <ul>${(i.recommendations || []).map(r => `<li>${r}</li>`).join('')}</ul>
+            </div>
+        </div>`).join('');
+
+    // Render real charts in ins-charts-grid
+    renderInsightCharts(insights);
+} else {
+    document.getElementById('ins-all-content').innerHTML = `
+        <div class="empty-state">
+            <div class="big-emoji">🔮</div>
+            <p>Executando análise para gerar insights...</p>
+        </div>`;
+}
 
     showSection('load', document.querySelector('.sidebar-item[onclick*="load"]'));
 }
