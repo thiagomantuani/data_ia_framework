@@ -869,15 +869,21 @@ function renderAll(data) {
                         <div style="background:var(--surface2);border-radius:8px;padding:1rem">
                             <div style="font-size:0.8rem;color:var(--text-dim);margin-bottom:0.5rem">${col.name}</div>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.8rem">
-                                <div>Média: <strong>${col.stats?.mean?.toFixed(2) ?? '-'}</strong></div>
-                                <div>Mediana: <strong>${col.stats?.median?.toFixed(2) ?? '-'}</strong></div>
-                                <div>Min: <strong>${col.stats?.min ?? '-'}</strong></div>
-                                <div>Max: <strong>${col.stats?.max ?? '-'}</strong></div>
-                                <div>Std: <strong>${col.stats?.std?.toFixed(2) ?? '-'}</strong></div>
-                                <div>% 0: <strong>${col.stats?.zero_pct?.toFixed(1) ?? '-'}%</strong></div>
+                                <div>Média: <strong>${col.stats?.mean != null ? col.stats.mean.toFixed(2) : '-'}</strong></div>
+                                <div>Mediana: <strong>${col.stats?.median != null ? col.stats.median.toFixed(2) : '-'}</strong></div>
+                                <div>Min: <strong>${col.stats?.min != null ? col.stats.min : '-'}</strong></div>
+                                <div>Max: <strong>${col.stats?.max != null ? col.stats.max : '-'}</strong></div>
+                                <div>Std: <strong>${col.stats?.std != null ? col.stats.std.toFixed(2) : '-'}</strong></div>
+                                <div>% 0: <strong>${col.stats?.zero_pct != null ? col.stats.zero_pct.toFixed(1) + '%' : '-'}</strong></div>
                             </div>
                         </div>`).join('')}
                 </div>
+            </div>`;
+    } else {
+        document.getElementById('struct-stats-content').innerHTML = `
+            <div class="empty-state">
+                <div class="big-emoji">📊</div>
+                <p>Nenhuma coluna numérica encontrada no dataset</p>
             </div>`;
     }
 

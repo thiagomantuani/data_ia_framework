@@ -292,12 +292,14 @@ def _get_columns_detail(ds) -> list[dict]:
             stats = {}
             if col_type == "numeric":
                 try:
+                    zero_count = (col_data == 0).sum()
                     stats = {
                         "mean": float(col_data.mean()),
                         "median": float(col_data.median()),
                         "min": float(col_data.min()),
                         "max": float(col_data.max()),
                         "std": float(col_data.std()),
+                        "zero_pct": round(float(zero_count) / len(col_data) * 100, 1) if len(col_data) > 0 else 0,
                     }
                 except Exception:
                     pass
