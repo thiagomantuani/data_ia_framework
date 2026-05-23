@@ -2,10 +2,8 @@ ai_data_framework/
 │
 ├── pyproject.toml
 ├── README.md
-├── .env
+├── .env.example
 ├── .gitignore
-├── .ruff.toml
-├── mypy.ini
 │
 ├── src/
 │   └── ai_data_framework/
