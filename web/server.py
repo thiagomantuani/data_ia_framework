@@ -256,7 +256,7 @@ def _get_sample(ds) -> list[dict]:
         else:
             df = ds
         sample = df.head(10)
-        return sample.to_dict(orient="records")
+        return sample.to_dicts()
     except Exception:
         return []
 
@@ -277,12 +277,12 @@ def _get_columns_detail(ds) -> list[dict]:
     for col_name in col_names:
         try:
             col_data = df[col_name]
-            dtype = str(col_data.dtype)
-            if "int" in dtype or "float" in dtype:
+            dtype = col_data.dtype
+            if dtype.is_numeric():
                 col_type = "numeric"
-            elif "datetime" in dtype or "date" in dtype:
+            elif dtype.is_temporal():
                 col_type = "date"
-            elif "bool" in dtype:
+            elif dtype == pl.Boolean:
                 col_type = "boolean"
             else:
                 col_type = "string"
