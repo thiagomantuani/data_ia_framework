@@ -20,8 +20,24 @@
             background: var(--surface); border-bottom: 1px solid var(--border);
             padding: 1rem 1.5rem;
         }
-        .top-bar-inner { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; }
+        .top-bar-inner { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; transition: all 0.3s ease; }
         .top-bar-title { font-size: 1.25rem; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 0.5rem; }
+        .top-bar-toggle {
+            background: var(--surface2); border: 1px solid var(--border);
+            color: var(--text-dim); cursor: pointer; padding: 0.3rem 0.5rem;
+            border-radius: 6px; font-size: 0.75rem; line-height: 1;
+            transition: all 0.2s; flex-shrink: 0;
+        }
+        .top-bar-toggle:hover { border-color: var(--accent); color: var(--accent); }
+        .top-bar.collapsed .top-bar-inner { display: none; }
+        .top-bar.collapsed { padding: 0.5rem 1rem; }
+        /* Always-visible collapsed header with toggle + title */
+        .top-bar-collapsed-header {
+            display: none; align-items: center; gap: 0.75rem;
+        }
+        .top-bar.collapsed .top-bar-collapsed-header { display: flex; }
+        .top-bar-title { font-size: 1.25rem; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 0.5rem; }
+        .top-bar-title-only { font-size: 1rem; font-weight: 700; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .upload-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
         .upload-zone {
             flex: 1; min-width: 200px; border: 2px dashed var(--border);
@@ -217,6 +233,20 @@
             .config-row input:first-child { grid-column: auto; }
             #runBtn { width: 100%; padding: 0.75rem; font-size: 1rem; }
 
+            /* Collapsed header on mobile — always visible when top-bar is collapsed */
+            .top-bar-collapsed-header {
+                display: none !important;
+            }
+            .top-bar.collapsed .top-bar-collapsed-header {
+                display: flex !important;
+            }
+            .top-bar.collapsed {
+                padding: 0.5rem 0.75rem;
+            }
+            .top-bar.collapsed .top-bar-collapsed-header .top-bar-title-only {
+                font-size: 0.9rem;
+            }
+
             /* Sidebar → bottom nav */
             .layout { flex-direction: column-reverse; }
             .sidebar {
@@ -245,10 +275,18 @@
 </head>
 <body>
 
-<!-- ===== TOPO: CARREGAR DADOS (sempre visível) ===== -->
-<div class="top-bar">
-    <div class="top-bar-inner">
-        <div class="top-bar-title">🤖 AI Data Framework — Análise Orientada a Hipóteses</div>
+<!-- ===== TOPO: CARREGAR DADOS (sempre visível, colapsável) ===== -->
+<div class="top-bar" id="topBar">
+    <!-- Collapsed header: always visible when collapsed -->
+    <div class="top-bar-collapsed-header">
+        <span class="top-bar-title-only">🤖 AI Data Framework</span>
+        <button class="top-bar-toggle" id="topBarToggle" onclick="toggleTopBar()" title="Expandir">▲</button>
+    </div>
+    <div class="top-bar-inner" id="topBarInner">
+        <div style="display:flex;align-items:center;gap:0.5rem">
+            <div class="top-bar-title">🤖 AI Data Framework — Análise Orientada a Hipóteses</div>
+            <button class="top-bar-toggle" id="topBarToggleInner" onclick="toggleTopBar()" title="Colapsar" style="margin-left:auto">▼</button>
+        </div>
 
         <div class="upload-row">
             <div class="upload-zone" id="dropZone">
@@ -544,6 +582,16 @@ function showSubsection(name, el) {
     // Persist active subsection per section so showSection can restore it
     if (!window._sectionTabs) window._sectionTabs = {};
     window._sectionTabs[sectionId] = name;
+}
+
+function toggleTopBar() {
+    const topBar = document.getElementById('topBar');
+    const toggle = document.getElementById('topBarToggle');
+    const toggleInner = document.getElementById('topBarToggleInner');
+    const collapsed = topBar.classList.toggle('collapsed');
+    const icon = collapsed ? '▲' : '▼';
+    if (toggle) toggle.textContent = icon;
+    if (toggleInner) toggleInner.textContent = icon;
 }
 
 function showSection(name, el) {
@@ -880,43 +928,68 @@ function renderValidatedCharts(hyps, ds) {
 
     let html = '';
 
-    // 1. Hypothesis status pie
+    // Legend header explaining what each status means
+    html += `<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;padding:0.75rem;background:var(--surface2);border-radius:8px;font-size:0.8rem">
+        <div style="display:flex;align-items:center;gap:0.4rem">
+            <div style="width:12px;height:12px;border-radius:3px;background:#22c55e"></div>
+            <span><strong>Confirmada</strong> — os dados provam que é verdade</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.4rem">
+            <div style="width:12px;height:12px;border-radius:3px;background:#ef4444"></div>
+            <span><strong>Refutada</strong> — os dados provam que é falso</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.4rem">
+            <div style="width:12px;height:12px;border-radius:3px;background:#eab308"></div>
+            <span><strong>Parcial</strong> — vale em parte, com ressalvas</span>
+        </div>
+    </div>`;
+
+    // 1. Hypothesis status pie with a summary line
     const statusCounts = { CONFIRMADA: confirmed.length, REFUTADA: refuted.length, PARCIALMENTE_CONFIRMADA: partial.length };
+    const totalHyps = hyps.length;
+    const summaryLine = totalHyps > 0
+        ? `De ${totalHyps} hipóteses testadas: <strong style="color:#22c55e">${confirmed} confirmada${confirmed > 0 ? ' ✓' : ''}</strong>, <strong style="color:#ef4444">${refuted} refutada${refuted > 0 ? ' ✗' : ''}</strong>, ${partial} parcial.`
+        : 'Nenhuma hipótese validada ainda.';
     html += `<div class="chart-box">
         <div class="chart-title">Status das Hipóteses</div>
+        <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.75rem;line-height:1.4">${summaryLine}</div>
         <div class="chart-canvas" id="canvas-validated-pie" style="height:200px;position:relative"></div>
     </div>`;
     html += `<div class="chart-box">
         <div class="chart-title">Distribuição por Confiança</div>
+        <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:0.5rem">Cada barra = uma hipótese. Altura = nível de certeza (0-100%). Barra verde = confirmada, vermelha = refutada, amarela = parcial.</div>
         <div class="chart-canvas" id="canvas-validated-confidence" style="height:200px;position:relative"></div>
     </div>`;
 
     grid.innerHTML = html;
 
-    // Render pie
-    const pieCanvas = document.getElementById('canvas-validated-pie');
-    if (pieCanvas) {
-        renderChart(pieCanvas, {
-            type: 'pie',
-            title: 'Status das Hipóteses',
-            labels: Object.keys(statusCounts),
-            values: Object.values(statusCounts),
-            colors: ['#22c55e', '#ef4444', '#eab308'],
-        });
-    }
+// Render pie with explicit legend
+        const pieCanvas = document.getElementById('canvas-validated-pie');
+        if (pieCanvas) {
+            renderChart(pieCanvas, {
+                type: 'pie',
+                title: 'Status das Hipóteses',
+                labels: Object.keys(statusCounts).map(s => s === 'CONFIRMADA' ? 'Confirmada' : s === 'REFUTADA' ? 'Refutada' : 'Parcial'),
+                values: Object.values(statusCounts),
+                colors: ['#22c55e', '#ef4444', '#eab308'],
+            });
+        }
 
     // Render confidence bar (all hypotheses sorted by confidence)
     const confCanvas = document.getElementById('canvas-validated-confidence');
     if (confCanvas) {
         const sorted = [...hyps].sort((a, b) => b.confidence - a.confidence);
-        const labels = sorted.map(h => h.title.slice(0, 15));
+        // Show full title on hover via title attribute, display truncated
+        const labels = sorted.map(h => ({ short: h.title.slice(0, 20), full: h.title }));
         const values = sorted.map(h => Math.round(h.confidence * 100));
         const colors = sorted.map(h => h.status === 'CONFIRMADA' ? '#22c55e' : h.status === 'REFUTADA' ? '#ef4444' : '#eab308');
         renderChart(confCanvas, {
             type: 'bar',
             title: 'Confiança por Hipótese',
-            data: { labels, values },
+            data: { labels: labels.map(l => l.short), values, colors },
             colors,
+            // pass full titles for title attribute
+            _fullLabels: labels.map(l => l.full),
         });
     }
 
@@ -960,6 +1033,7 @@ function renderValidatedCharts(hyps, ds) {
         );
         const heatmapHtml = `<div class="chart-box" style="grid-column: 1 / -1">
             <div class="chart-title">Correlações entre Colunas Numéricas</div>
+            <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:0.5rem">Intensidade da relação entre duas colunas. Verde = relação positiva, vermelho = relação negativa. Valores perto de 1 ou -1 = forte, perto de 0 = fraca ou inexistente.</div>
             <div class="chart-canvas" id="canvas-col-correlations" style="height:260px;position:relative"></div>
         </div>`;
         grid.innerHTML += heatmapHtml;
@@ -1167,6 +1241,7 @@ function renderBarChart(canvas, chart) {
     const labels = chart.data ? chart.data.labels : (chart.labels || []);
     const values = chart.data ? chart.data.values : (chart.values || []);
     const colors = chart.colors || [];
+    const fullLabels = chart._fullLabels || [];
     if (!labels || !values || labels.length === 0) {
         canvas.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:2rem">Sem dados para exibir</div>';
         return;
@@ -1176,7 +1251,7 @@ function renderBarChart(canvas, chart) {
     const totalW = canvas.clientWidth || 400;
     const barH = 20;
     const gap = 6;
-    const labelW = Math.min(120, totalW * 0.3);
+    const labelW = Math.min(140, totalW * 0.35);
     const chartW = totalW - labelW - 60;
     const startX = labelW;
     const totalH = labels.length * (barH + gap) + 20;
@@ -1189,20 +1264,25 @@ function renderBarChart(canvas, chart) {
         const barW = maxVal > 0 ? (Math.abs(values[i]) / maxVal) * chartW : 0;
         const color = colors[i] || '#06b6d4';
         const barX = values[i] < 0 ? startX - barW : startX;
+        const fullTitle = fullLabels[i] || label;
+        const displayLabel = label.length > 18 ? label.slice(0, 18) + '…' : label;
 
-        // Label
-        svg += `<text x="${labelW - 8}" y="${y + barH / 2 + 4}" 
-            text-anchor="end" font-size="11" fill="#71717a" font-family="system-ui">
-            ${label.length > 12 ? label.slice(0, 12) + '…' : label}</text>`;
+        // Tooltip wrapper
+        svg += `<title>${fullTitle} — ${values[i]}%</title>`;
+
+        // Label (left side)
+        svg += `<text x="${labelW - 8}" y="${y + barH / 2 + 4}"
+            text-anchor="end" font-size="11" fill="#9ca3af" font-family="system-ui">
+            ${displayLabel}</text>`;
 
         // Bar
-        svg += `<rect x="${barX}" y="${y}" width="${barW}" height="${barH}" 
+        svg += `<rect x="${barX}" y="${y}" width="${barW}" height="${barH}"
             rx="3" fill="${color}" opacity="0.85"/>`;
 
-        // Value label
-        svg += `<text x="${startX + barW + 8}" y="${y + barH / 2 + 4}" 
+        // Value label (right of bar)
+        svg += `<text x="${startX + barW + 8}" y="${y + barH / 2 + 4}"
             font-size="11" fill="#e4e4e7" font-family="system-ui">
-            ${typeof values[i] === 'number' ? values[i].toFixed(2) : values[i]}</text>`;
+            ${values[i]}${chart.title && chart.title.toLowerCase().includes('confiança') ? '%' : ''}</text>`;
     });
     svg += '</svg>';
     canvas.innerHTML = svg;
@@ -1252,13 +1332,22 @@ function renderPieChart(canvas, chart) {
         startAngle += angle;
     });
 
-    // Legend
+    // Legend — explicit with count, percentage and meaning
     const legendY = cy * 2 + 15;
-    let legend = `<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:0.5rem;justify-content:center">`;
+    const statusMeaning = {
+        'Confirmada': 'os dados provam que é verdade',
+        'Refutada': 'os dados provam que é falso',
+        'Parcial': 'vale em parte, com ressalvas',
+    };
+    let legend = `<div style="display:flex;flex-wrap:wrap;gap:0.6rem;margin-top:0.75rem;justify-content:center;padding:0 0.5rem">`;
     labels.forEach((l, i) => {
-        legend += `<span style="font-size:0.7rem;color:var(--text-dim);display:flex;align-items:center;gap:0.25rem">
-            <span style="width:8px;height:8px;border-radius:2px;background:${colors[i % colors.length]}"></span>
-            ${l.length > 15 ? l.slice(0, 15) + '…' : l}
+        const pct = total > 0 ? Math.round(values[i] / total * 100) : 0;
+        const meaning = statusMeaning[l] || '';
+        legend += `<span style="display:flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:var(--text-dim)">
+            <span style="width:10px;height:10px;border-radius:2px;background:${colors[i % colors.length]}"></span>
+            <strong style="color:var(--text)">${l}</strong>
+            <span>${values[i]} (${pct}%)</span>
+            ${meaning ? `<span style="color:#71717a">— ${meaning}</span>` : ''}
         </span>`;
     });
     legend += '</div>';
